@@ -1,0 +1,234 @@
+structure A = Absyn
+
+%%
+%term
+    EOF
+  | ID of string
+  | INT of int | STRING of string
+  | COMMA | COLON | SEMICOLON | LPAREN | RPAREN | LBRACK | RBRACK
+  | LBRACE | RBRACE | DOT
+  | PLUS | MINUS | TIMES | DIVIDE | EQ | NEQ | LT | LE | GT | GE
+  | AND | OR | ASSIGN
+  | ARRAY | IF | THEN | ELSE | WHILE | FOR | TO | DO | LET | IN | END | OF
+  | BREAK | NIL
+  | FUNCTION | VAR | TYPE
+  | UMINUS | LOW (* These tokens are only used for rule precedence *)
+
+%nonterm Program of A.exp
+       | Exp of A.exp
+       | ExpSeq of (A.exp * pos) list
+       | Arguments of A.exp list
+       | RecordField of (Symbol.symbol * A.exp * pos)
+       | RecordFields of (Symbol.symbol * A.exp * pos) list
+       | LValue of A.var
+       | Typ of A.ty
+       | TypeDec of {name: Symbol.symbol, ty: A.ty, pos: pos}
+       | TypeDecs of {name: Symbol.symbol, ty: A.ty, pos: pos} list
+       | TypedField of A.field
+       | TypedFields of A.field list
+       | Dec of A.dec
+       | Decs of A.dec list
+       | VarDec of A.dec
+       | FunDec of A.fundec
+       | FunDecs of A.fundec list
+
+%nonassoc LOW
+%nonassoc THEN DO TYPE FUNCTION ID
+%nonassoc ASSIGN LBRACK ELSE OF
+%left OR
+%left AND
+%nonassoc EQ NEQ LE LT GT GE
+%left PLUS MINUS
+%left TIMES DIVIDE
+%left UMINUS
+
+%pos int
+%pure
+%verbose
+%start Program
+%eop EOF
+%noshift EOF
+
+%name Tiger
+
+%keyword WHILE FOR TO BREAK LET IN END FUNCTION VAR TYPE ARRAY IF THEN ELSE
+         DO OF NIL
+
+%prefer THEN ELSE LPAREN
+
+%value ID ("bogus")
+%value INT (1)
+%value STRING ("")
+
+%%
+
+Program : Exp (Exp)
+
+Exp : NIL                             (A.NilExp (NILleft))
+    | BREAK                           (A.BreakExp (BREAKleft))
+    | INT                             (A.IntExp (INT, INTleft))
+    | STRING                          (A.StringExp (STRING, STRINGleft))
+    | LValue                          (A.VarExp (LValue))
+    | LPAREN ExpSeq RPAREN            (A.SeqExp (ExpSeq, LPARENleft))
+    | ID LPAREN Arguments RPAREN      (A.CallExp {func=Symbol.symbol ID,
+                                                  args=Arguments,
+                                                  pos=IDleft})
+    | MINUS Exp %prec UMINUS          (A.OpExp {left=A.IntExp (0, MINUSleft),
+                                                oper=A.MinusOp,
+                                                right=Exp,
+                                                pos=MINUSleft})
+    | Exp TIMES Exp                   (A.OpExp {left=Exp1,
+                                                oper=A.TimesOp,
+                                                right=Exp2,
+                                                pos=Exp1left})
+    | Exp DIVIDE Exp                  (A.OpExp {left=Exp1,
+                                                oper=A.DivideOp,
+                                                right=Exp2,
+                                                pos=Exp1left})
+    | Exp PLUS Exp                    (A.OpExp {left=Exp1,
+                                                oper=A.PlusOp,
+                                                right=Exp2,
+                                                pos=Exp1left})
+    | Exp MINUS Exp                   (A.OpExp {left=Exp1,
+                                                oper=A.MinusOp,
+                                                right=Exp2,
+                                                pos=Exp1left})
+    | Exp EQ Exp                      (A.OpExp {left=Exp1,
+                                                oper=A.EqOp,
+                                                right=Exp2,
+                                                pos=Exp1left})
+    | Exp NEQ Exp                     (A.OpExp {left=Exp1,
+                                                oper=A.NeqOp,
+                                                right=Exp2,
+                                                pos=Exp1left})
+    | Exp LE Exp                      (A.OpExp {left=Exp1,
+                                                oper=A.LeOp,
+                                                right=Exp2,
+                                                pos=Exp1left})
+    | Exp LT Exp                      (A.OpExp {left=Exp1,
+                                                oper=A.LtOp,
+                                                right=Exp2,
+                                                pos=Exp1left})
+    | Exp GE Exp                      (A.OpExp {left=Exp1,
+                                                oper=A.GeOp,
+                                                right=Exp2,
+                                                pos=Exp1left})
+    | Exp GT Exp                      (A.OpExp {left=Exp1,
+                                                oper=A.GtOp,
+                                                right=Exp2,
+                                                pos=Exp1left})
+    | Exp AND Exp                     (A.IfExp {test=Exp1,
+                                                then'=Exp2,
+                                                else'=
+                                                  SOME (A.IntExp (0, ANDleft)),
+                                                pos=Exp1left})
+    | Exp OR Exp                      (A.IfExp {test=Exp1,
+                                                then'=A.IntExp (1, ORleft),
+                                                else'=SOME Exp2,
+                                                pos=Exp1left})
+    | LValue ASSIGN Exp               (A.AssignExp {var=LValue,
+                                                    exp=Exp,
+                                                    pos=LValueleft})
+    | IF Exp THEN Exp                 (A.IfExp {test=Exp1,
+                                                then'=Exp2,
+                                                else'=NONE,
+                                                pos=Exp1left})
+    | IF Exp THEN Exp ELSE Exp        (A.IfExp {test=Exp1,
+                                                then'=Exp2,
+                                                else'=SOME Exp3,
+                                                pos=Exp1left})
+    | WHILE Exp DO Exp                (A.WhileExp {test=Exp1,
+                                                   body=Exp2,
+                                                   pos=Exp1left})
+    | FOR ID ASSIGN Exp TO Exp DO Exp (A.ForExp {var=Symbol.symbol ID,
+                                                 escape=ref true,
+                                                 lo=Exp1, hi=Exp2, body=Exp3,
+                                                 pos=FORleft})
+    | ID LBRACE RecordFields RBRACE   (A.RecordExp {fields=RecordFields,
+                                                    typ=Symbol.symbol ID,
+                                                    pos=IDleft})
+    | ID LBRACK Exp RBRACK OF Exp     (A.ArrayExp {typ=Symbol.symbol ID,
+                                                   size=Exp1,
+                                                   init=Exp2,
+                                                   pos=IDleft})
+    | LET Decs IN ExpSeq END          (A.LetExp {decs=Decs,
+                                                 body=A.SeqExp (ExpSeq,
+                                                                ExpSeqleft),
+                                                 pos=LETleft})
+
+ExpSeq :                      (nil)
+       | Exp                  ([(Exp, Expleft)])
+       | ExpSeq SEMICOLON Exp (ExpSeq @ [(Exp, Expleft)])
+
+Arguments :                     (nil)
+          | Exp                 ([Exp])
+          | Arguments COMMA Exp (Arguments @ [Exp])
+
+RecordField : ID EQ Exp (Symbol.symbol ID, Exp, IDleft)
+
+RecordFields :                                (nil)
+             | RecordField                    ([RecordField])
+             | RecordFields COMMA RecordField (RecordFields @ [RecordField])
+
+LValue : ID                       (A.SimpleVar (Symbol.symbol ID, IDleft))
+       | ID LBRACK Exp RBRACK     (A.SubscriptVar (A.SimpleVar
+                                                    (Symbol.symbol ID, IDleft),
+                                                  Exp,
+                                                  IDleft))
+       | LValue DOT ID            (A.FieldVar (LValue,
+                                               Symbol.symbol ID,
+                                               LValueleft))
+       | LValue LBRACK Exp RBRACK (A.SubscriptVar (LValue, Exp, LValueleft))
+
+Typ : ID                        (A.NameTy (Symbol.symbol ID, IDleft))
+    | LBRACE TypedFields RBRACE (A.RecordTy TypedFields)
+    | ARRAY OF ID               (A.ArrayTy (Symbol.symbol ID, ARRAYleft))
+
+TypeDec : TYPE ID EQ Typ ({name=Symbol.symbol ID, ty=Typ, pos=TYPEleft})
+
+TypeDecs : TypeDec          ([TypeDec])
+         | TypeDecs TypeDec (TypeDecs @ [TypeDec])
+
+TypedField : ID COLON ID ({name=Symbol.symbol ID1,
+                           escape=ref true,
+                           typ=Symbol.symbol ID2,
+                           pos=ID1left})
+
+TypedFields :                              (nil)
+            | TypedField                   ([TypedField])
+            | TypedFields COMMA TypedField (TypedFields @ [TypedField])
+
+Dec : VarDec             (VarDec)
+    | TypeDecs %prec LOW (A.TypeDec TypeDecs)
+    | FunDecs  %prec LOW (A.FunctionDec FunDecs)
+
+Decs : Dec      ([Dec])
+     | Decs Dec (Decs @ [Dec])
+
+VarDec : VAR ID ASSIGN Exp          (A.VarDec {name=Symbol.symbol ID,
+                                               escape=ref true,
+                                               typ=NONE,
+                                               init=Exp,
+                                               pos=VARleft})
+       | VAR ID COLON ID ASSIGN Exp (A.VarDec {name=Symbol.symbol ID1,
+                                               escape=ref true,
+                                               typ=SOME (Symbol.symbol ID2,
+                                                         ID2left),
+                                               init=Exp,
+                                               pos=VARleft})
+
+FunDec : FUNCTION ID LPAREN TypedFields RPAREN
+         EQ Exp                                ({name=Symbol.symbol ID,
+                                                 params=TypedFields,
+                                                 result=NONE,
+                                                 body=Exp,
+                                                 pos=FUNCTIONleft})
+       | FUNCTION ID LPAREN TypedFields RPAREN
+         COLON ID EQ Exp                       ({name=Symbol.symbol ID1,
+                                                 params=TypedFields,
+                                                 result=SOME (Symbol.symbol ID2, ID2left),
+                                                 body=Exp,
+                                                 pos=FUNCTIONleft})
+
+FunDecs : FunDec         ([FunDec])
+        | FunDecs FunDec (FunDecs @ [FunDec])

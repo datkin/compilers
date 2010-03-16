@@ -11,43 +11,56 @@ sig
     val reset : unit -> unit
 end
 
-structure ErrorMsg : ERRORMSG =
+structure Error =
+struct
+  type pos = int and symbol = Symbol.symbol
+  datatype static = Lex of {pos: pos, msg: string}
+                  | Parse of {pos: pos, msg: string}
+end
+
+structure ErrorMsg (* : ERRORMSG *) =
 struct
 
   val anyErrors = ref false
-  val fileName = ref ""
   val lineNum = ref 1
   val linePos = ref [1]
-  val sourceStream = ref TextIO.stdIn
+  val errorLog : Error.static list ref = ref []
+  val sourceName = ref "stdIn"
 
-  fun reset() = (anyErrors:=false;
-		 fileName:="";
-		 lineNum:=1;
-		 linePos:=[1];
-		 sourceStream:=TextIO.stdIn)
+  fun reset name =
+    (anyErrors := false;
+     lineNum := 1;
+     linePos := [1];
+     errorLog = ref [];
+     sourceName := name)
 
   exception Error
 
-  fun error pos (msg:string) =
-      let fun look(a::rest,n) =
-		if a<pos then app print [":",
-				       Int.toString n,
-				       ".",
-				       Int.toString (pos-a)]
-		       else look(rest,n-1)
-	    | look _ = print "0.0"
-       in anyErrors := true;
-	  print (!fileName);
-	  look(!linePos,!lineNum);
-	  print ":";
-	  print msg;
-	  print "\n"
-      end
+  fun posToStr pos =
+    let fun look(a::rest,n) =
+              if a<pos then
+                String.concat [Int.toString n,
+                               ".",
+                               Int.toString (pos-a)]
+              else look(rest,n-1)
+          | look _ = "0.0"
+    in
+      look (!linePos, !lineNum)
+    end
+
+  fun error pos (msg : string) =
+    print (!sourceName ^ ":" ^ posToStr pos ^ " Error: " ^ msg ^ "\n")
 
   fun impossible msg =
-      (app print ["Error: Compiler bug: ",msg,"\n"];
-       TextIO.flushOut TextIO.stdOut;
-       raise Error)
+    (app print ["Error: Compiler bug: ",msg,"\n"];
+     TextIO.flushOut TextIO.stdOut;
+     raise Error)
 
-end  (* structure ErrorMsg *)
-  
+  fun display Lex {pos, msg} = "lex error at " ^ posToStr pos ^ ": " ^ msg
+
+  fun log err =
+    (errorLog := err :: !errorLog;
+     anyErrors := true;
+     display err)
+
+end

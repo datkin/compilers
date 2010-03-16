@@ -1,5 +1,7 @@
+type svalue = Tokens.svalue
 type pos = int
-type lexresult = Tokens.token
+type ('a, 'b) token = ('a, 'b) Tokens.token
+type lexresult = (svalue, pos) token
 
 val lineNum = ErrorMsg.lineNum
 val linePos = ErrorMsg.linePos
@@ -15,7 +17,7 @@ structure KeywordMap = BinaryMapFn (struct
   val compare = String.compare
 end)
 
-val keywords = foldr KeywordMap.insert' KeywordMap.empty [
+val keywords : (pos * pos -> (svalue, pos) token) KeywordMap.map = foldr KeywordMap.insert' KeywordMap.empty [
     ("array", Tokens.ARRAY),
     ("break", Tokens.BREAK),
     ("do", Tokens.DO),
@@ -93,12 +95,14 @@ fun eof () =
         ();
       (StringTokenBuilder.reset ();
        commentDepth := 0;
-       commentStartPos := 0;
-       ErrorMsg.reset ());
+       commentStartPos := 0
+       (* resetting the error message messes up post-parse error reports ErrorMsg.reset () *));
       Tokens.EOF(pos,pos)
     end
 
 %%
+
+%header (functor TigerLexFun (structure Tokens : Tiger_TOKENS));
 
 %s COMMENT STRING FEED;
 
@@ -109,7 +113,7 @@ asciiprintable = [\032\033\035-\091\093-\126];
 <INITIAL,COMMENT,FEED>\n => (recordNewline yypos;
                              continue ());
 
-<INITIAL,FEED>[\t\r\f ]+ => (continue ());
+<INITIAL,FEED>[\t\r\ ]+ => (continue ());
 
 <INITIAL>[a-zA-Z][a-zA-Z0-9_]* => (* Match identifiers *)
   (tokenizeId (yytext, yypos, yypos + size yytext));
@@ -135,7 +139,7 @@ asciiprintable = [\032\033\035-\091\093-\126];
   (StringTokenBuilder.appendEscape (yytext, yypos);
    continue ());
 
-<STRING>\\(\^.|[^\t\r\f\n ]) =>
+<STRING>\\(\^.|[^\t\r\f\n\ ]) =>
   (* This catches any control character (\^c) or non-feed escape character that
      wasn't already matched and reports an error *)
   (error yypos ("Illegal escape character: " ^ yytext);
@@ -183,7 +187,7 @@ asciiprintable = [\032\033\035-\091\093-\126];
 <INITIAL>"|" => (Tokens.OR (yypos, yypos + 1));
 <INITIAL>"<>" => (Tokens.NEQ (yypos, yypos + 2));
 <INITIAL>"<=" => (Tokens.LE (yypos, yypos + 2));
-<INITIAL>">=" => (Tokens.GT (yypos, yypos + 2));
+<INITIAL>">=" => (Tokens.GE (yypos, yypos + 2));
 <INITIAL>":=" => (Tokens.ASSIGN (yypos, yypos + 2));
 
 <INITIAL,COMMENT>"/*" => (YYBEGIN COMMENT;

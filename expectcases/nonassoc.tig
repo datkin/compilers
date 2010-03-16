@@ -1,0 +1,8 @@
+testcases/nonassoc.tig:1.2 Error: syntax error: replacing  EQ with  DOT
+OpExp(EqOp,
+ VarExp(
+  FieldVar(
+   SimpleVar(a),
+   b)),
+ VarExp(
+  SimpleVar(c)))

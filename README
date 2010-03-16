@@ -1,15 +1,59 @@
-Team Members:
-* Atkin, Drew (datkin)
-* Mendelewski, John (jmendel)
+[[Team Ramrod]]
+  Atkin, Drew
+  Mendelewski, John
 
-Comment Handling:
+[Parser Comments]
+
+[[Shift Reduce Conflicts]]
+  We eliminated a large body of conflicts intially by simply adding the
+  appropriate precedence rules for all the binary operators.
+
+Conflict: Shift TypeDec/FunDec, Reduce TypeDecs/FunDecs to Dec
+  Resolved by giving the Dec -> TypeDecs and Dec -> FunDecs rules
+  the lowest precedence. This tells the parser to always shift
+  more TypeDec/FunDec inside the TypeDecs -> TypeDecs TypeDec and
+  FunDecs -> FunDecs FunDec rules.
+
+Conflict: Shift LBRACK, Reduce ID to LValue
+  Originally, our grammar for LVALUE was the following:
+    Exp : ...
+        | ID LBRACK Exp RBRACK OF Exp (1)
+        | ...
+    LValue : ID (2)
+           | LValue DOT ID (3)
+           | LValue LBRACK Exp RBRACK (4)
+  Resolving the conflict in favor of either rule precludes the other rule from
+  ever matching (if ID is immediately reduced to an LValue, rule (1) will never
+  match and if an LBRACK is shifted after seeing an ID, rule (4) will never
+  match). To resolve this, we need to push ID LBRACK Exp RBRACK all onto the
+  stack before making the decision to reduce. We delay this reduction decision
+  by adding another production to LValue:
+    LValue : ID (2)
+           | ...
+           | ID LBRACK Exp RBRACK (5)
+  This however introduces two shift reduce/conflicts. One between shifting
+  LBRACK and reducing ID to LValue, which was resolved by giving LBRACK a higer
+  precedence than ID. The second conflict is between shifting OF and reducing
+  by rule (5) which we resolve by giving precedence to OF.
+
+[[Points of Interest]]
+  In the interest of better error reporting down the line we modified Appel's
+  Absyn struct to provide positions for Nil expressions and Int expressions.
+
+  We've provided a testing script which tests the parser against a few choice
+  testcases whose output has been manually validated. Just run:
+    $ ./test.sh
+
+[Lexer Comments]
+
+[[Comment Handling]]
 When a /* is encountered, the lexer enters the COMMENT state and increments the
 commentDepth variable. While in the COMMENT state, subsequent /*'s increment
 commentDepth and */'s decrement commentDepth; all other characters are ignored.
 When commentDepth is decremented down to zero, the lexer returns to the INITIAL
 state.
 
-Error Handling:
+[[Error Handling]]
 When a lexing error is encountered, it is reported with the corresponding line
 number and the lexer continues lexing. The following error cases are handled:
 
@@ -23,13 +67,13 @@ for unclosed comments and strings.
 
 Error reporting is handled by Appel's ErrorMsg module.
 
-End-of-file Handling:
+[[End-of-file Handling]]
 The commentDepth and StringTokenBuilder.inString variables are used to determine
 if the lexer is in the middle of an incomplete comment or string when the input
 ends. If so, the appropriate error is reported. The lexer also resets all the
 variables necessary for subsequent parses to be successful (ie, reaching EOF
 inside of a comment or string does not leave the lexer in an undefined state).
 
-Other Interesting Points:
+[[Other Interesting Points]]
 The lexer uses a keyword lookup table to differentiate identifiers and keywords,
 thus minimizing the number of states needed by the lexer.

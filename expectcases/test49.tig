@@ -1,0 +1,15 @@
+testcases/test49.tig:5.18 Error: syntax error: inserting  PLUS
+LetExp([
+ TypeDec[
+  (rectype,
+   RecordTy[
+    (name,true,string),
+    (id,true,int)])],
+ VarDec(a,true,NONE,
+  OpExp(PlusOp,
+   VarExp(
+    SimpleVar(rectype)),
+   NilExp))],
+ SeqExp[
+  VarExp(
+   SimpleVar(a))])
