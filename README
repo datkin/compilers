@@ -1,0 +1,35 @@
+Team Members:
+* Atkin, Drew (datkin)
+* Mendelewski, John (jmendel)
+
+Comment Handling:
+When a /* is encountered, the lexer enters the COMMENT state and increments the
+commentDepth variable. While in the COMMENT state, subsequent /*'s increment
+commentDepth and */'s decrement commentDepth; all other characters are ignored.
+When commentDepth is decremented down to zero, the lexer returns to the INITIAL
+state.
+
+Error Handling:
+When a lexing error is encountered, it is reported with the corresponding line
+number and the lexer continues lexing. The following error cases are handled:
+
+  1. Illegal string charaters, escape sequences - The offending character are
+ignored and the lexer is returned to the STRING state.
+  2. Illegal feed characters - While creating a multiline string, non-whitespace
+characters are ignored and the lexer returns to the FEED state.
+  3. Unclosed comments and strings - commentStartPos and
+StringTokenBuilde.startPos facilitate the reporting of accurate line numbers
+for unclosed comments and strings.
+
+Error reporting is handled by Appel's ErrorMsg module.
+
+End-of-file Handling:
+The commentDepth and StringTokenBuilder.inString variables are used to determine
+if the lexer is in the middle of an incomplete comment or string when the input
+ends. If so, the appropriate error is reported. The lexer also resets all the
+variables necessary for subsequent parses to be successful (ie, reaching EOF
+inside of a comment or string does not leave the lexer in an undefined state).
+
+Other Interesting Points:
+The lexer uses a keyword lookup table to differentiate identifiers and keywords,
+thus minimizing the number of states needed by the lexer.
