@@ -147,12 +147,6 @@ and transDec (venv, tenv, _, A.FunctionDec fundecs) = (* functions *)
            (tys @ [resolveTyName (tenv, typ, pos)], name :: names))
       fun resultToTy NONE = T.UNIT
         | resultToTy (SOME (typ, pos)) = resolveTyName (tenv, typ, pos)
-(*      fun decToEntry {name, params, result, body, pos} =
-          (name, Env.FunEntry {formals=(#1 (foldl (paramToFormal name)
-                                                  ([], [])
-                                                  params)),
-                               result=resultToTy result})
-          *)
       fun addFun (dec as {name, params, result, body, pos},
                   (seen, venv)) =
           if absent (name, seen) then
@@ -167,7 +161,6 @@ and transDec (venv, tenv, _, A.FunctionDec fundecs) = (* functions *)
             (error (Error.FunRedefined {pos=pos, name=name});
              (seen, venv))
       val (_, venv') = foldl addFun ([], venv) fundecs
-    (*Symbol.enter' venv (map decToEntry fundecs)*)
     in
       (map (fn fundec => transFunDec (venv', tenv, fundec)) fundecs;
        {venv=venv', tenv=tenv})
@@ -293,10 +286,6 @@ and transExp (venv, tenv, loop, exp) =
                      | _ :: _ => error (E.DuplicateField {pos=pos, field=field})
                      | [] => error (E.MissingField {pos=pos, field=field, expected=expected})
              in
-(*               ((ListPair.foldrEq checkFields fields field_exps
-                   handle ListPair.UnequalLengths =>
-                          error ());
-                  {exp=(), ty=record}) *)
                ((map checkField fields); {exp=(), ty=record})
              end
            | SOME actual => (error (E.NonRecordType {pos=pos, sym=typ, actual=actual});

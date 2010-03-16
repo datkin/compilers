@@ -92,14 +92,6 @@ struct
             " of " ^ safeToString (ty, this :: seen) ^
             ", #" ^ Int.toString unique ^
             ")"
-
-            (*
-            if absent (this, seen) then
-              "array(" ^ safeToString (ty, this :: seen) ^ ", "
-              ^ Int.toString dim ^ ", #" ^ Int.toString unique ^ ")"
-            else
-              "<" ^ Int.toString unique ^ ">"
-              *)
           | safeToString (this as NAME (sym, ty_ref), seen) =
             if absent (this, seen) then
               case !ty_ref of
