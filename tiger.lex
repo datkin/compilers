@@ -8,7 +8,7 @@ val linePos = ErrorMsg.linePos
 val commentDepth = ref 0
 val commentStartPos = ref 0
 
-val error = ErrorMsg.error
+fun error pos str = ErrorMsg.log (Error.Lex {pos=pos, msg=str})
 
 (* Create a lookup table for keywords *)
 

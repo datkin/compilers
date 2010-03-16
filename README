@@ -2,6 +2,43 @@
   Atkin, Drew
   Mendelewski, John
 
+[Type Checker Comments]
+
+[[Points of Interest]]
+Our type-checker is accompanied by a test-suite of 73 unit tests. Run them!
+
+  - CM.make "sources.cm";
+  - Tests.run ();
+
+Instead of providing a Main module, we've provided a Tiger module that allows
+easy compiltation of files or strings from the SML REPL:
+
+  - Tiger.compileFile "testcases/test16.tig";
+  testcases/test16.tig:4.1 Error: Cannot resolve cyclic type declarations: a,
+  b, c, d
+  val it = {exp=(),ty=STRING} : {exp:Translate.exp, ty:Types.ty}
+
+  - Tiger.compileStr "1";
+  val it = {exp=(),ty=INT} : {exp:Translate.exp, ty:Types.ty}
+
+We've rewritten large parts of the boiler-plate provided by Appel. Specifically:
+  * errormsg.sml
+    We've created an Error structure that provides type constructors for describing
+    static program errors. This allows for clean, robust checking of lexing, parsing
+    and type errors. Instead of immediately printing all errors, static errors are
+    logged and may be displayed or tested for by a testing module.
+    The error reporting syntax is compatible with SML's own error reporting, meaning
+    errors are properly interpreted by emacs.
+  * absyn.sml
+    We've provided each syntax type with a position argument for better error reporting.
+  * types.sml
+    This has been augmented with a TOP and BOTTOM type for the type lattice as well as
+    toString, equalTy and various type lattice operations.
+  * symbol.sml, table.sml, table.sig
+    The Symbol module was extended with a fold{l,r} friendly enter' function, similar to
+    ORD_MAP.insert'. A Symbol.entries function was also added to output the contents of
+    a Symbol table to facilitate debugging.
+
 [Parser Comments]
 
 [[Shift Reduce Conflicts]]
