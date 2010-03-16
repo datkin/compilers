@@ -51,7 +51,7 @@ fun resolveTyDecs (new, tenv, pos) = (* Pos is the beginning of the declaration.
                                      T.NAME _ => true
                                    | _ => false)
                          (map (fn (_, ty) => ty) fields)
-           | SOME (T.ARRAY (nameTy as T.NAME _, _)) => [nameTy]
+           | SOME (T.ARRAY (nameTy as T.NAME _, _, _)) => [nameTy]
            | SOME (nameTy as T.NAME _) => [nameTy]
            | _ => [])
       fun setTy ty (T.NAME (_, tyref)) = tyref := SOME ty
@@ -97,14 +97,14 @@ fun transTy (tenv, A.NameTy (name, _), _) =
                        (name, (transTy (tenv, A.NameTy (typ, pos'), pos))))
                    fields),
               pos)
-  | transTy (tenv, A.ArrayTy (sym, pos'), pos) =
-    T.ARRAY (transTy (tenv, A.NameTy (sym, pos'), pos), pos)
+  | transTy (tenv, A.ArrayTy (sym, dim, pos'), pos) =
+    T.ARRAY (transTy (tenv, A.NameTy (sym, pos'), pos), dim, pos)
 
 (* (symbol * exp * pos) list * symbol -> exp *)
 (* Lookup the entry corresponding to the given field
  * from an Absyn.RecordExp. *)
-fun findFieldEntry (fields, field : Symbol.symbol) =
-    List.find (fn (field', _, _) => field = field') fields
+fun findFieldEntries (fields, field : Symbol.symbol) =
+    List.filter (fn (field', _, _) => field = field') fields
 
 fun errorIf condition err = if condition then error err else ()
 
@@ -147,12 +147,27 @@ and transDec (venv, tenv, _, A.FunctionDec fundecs) = (* functions *)
            (tys @ [resolveTyName (tenv, typ, pos)], name :: names))
       fun resultToTy NONE = T.UNIT
         | resultToTy (SOME (typ, pos)) = resolveTyName (tenv, typ, pos)
-      fun decToEntry {name, params, result, body, pos} =
+(*      fun decToEntry {name, params, result, body, pos} =
           (name, Env.FunEntry {formals=(#1 (foldl (paramToFormal name)
                                                   ([], [])
                                                   params)),
                                result=resultToTy result})
-      val venv' = foldr Symbol.enter' venv (map decToEntry fundecs)
+          *)
+      fun addFun (dec as {name, params, result, body, pos},
+                  (seen, venv)) =
+          if absent (name, seen) then
+            (name :: seen,
+             Symbol.enter (venv,
+                           name,
+                           Env.FunEntry {formals=(#1 (foldl (paramToFormal name)
+                                                            ([], [])
+                                                            params)),
+                                         result=resultToTy result}))
+          else
+            (error (Error.FunRedefined {pos=pos, name=name});
+             (seen, venv))
+      val (_, venv') = foldl addFun ([], venv) fundecs
+    (*Symbol.enter' venv (map decToEntry fundecs)*)
     in
       (map (fn fundec => transFunDec (venv', tenv, fundec)) fundecs;
        {venv=venv', tenv=tenv})
@@ -189,6 +204,12 @@ and transExp (venv, tenv, loop, exp) =
     let
       fun getTy exp = #ty (transExp (venv, tenv, loop, exp))
 
+      and checkIndexExp exp =
+          let val actual = getTy exp in
+            expect actual T.INT
+                   (E.NonIntSubscript {pos=A.getPosExp exp, actual=actual})
+          end
+
       (* Determine the type of an lvalue. *)
       and transVar (A.SimpleVar (name, pos)) = (* var *)
           (case Symbol.look (venv, name) of
@@ -206,17 +227,19 @@ and transExp (venv, tenv, loop, exp) =
                          {exp=(), ty=T.TOP}))
            | {exp=_, ty} => (error (E.NonRecordAccess {pos=pos, field=field, actual=ty});
                              {exp=(), ty=T.TOP}))
-        | transVar (A.SubscriptVar (var, exp, pos)) = (* array *)
-          let val actual = getTy exp in
-            expect actual T.INT
-                   (E.NonIntSubscript {pos=pos, actual=actual});
+        | transVar (A.SubscriptVar (var, exps, pos)) = (* array *)
+          let val indices = length exps
+          in
+            (app checkIndexExp exps);
             case transVar var of
-              {exp=_, ty=T.ARRAY (ty, _)} => {exp=(), ty=ty}
+              {exp=_, ty=array_ty as T.ARRAY (ty, dim, _)} =>
+              (errorIf (indices <> dim)
+                       (E.DimensionMismatch{pos=pos, ty=array_ty, expected=dim, actual=indices});
+               {exp=(), ty=ty})
             | {exp=_, ty} => (errorIf (T.wellTyped ty)
                                       (E.NonArrayAccess {pos=pos, actual=ty});
                               {exp=(), ty=T.TOP})
           end
-
       and transCall {func=name, args=arg_exps, pos} =
           (case Symbol.look (venv, name) of
              NONE => (error (E.UndefinedFunction {pos=pos, sym=name});
@@ -237,10 +260,15 @@ and transExp (venv, tenv, loop, exp) =
 
       and transOp {left, oper, right, pos} =
           let
-            val expected = operTy oper
+            fun operTy (T.STRING, _) = T.STRING
+              | operTy (T.INT, _) = T.INT
+              | operTy (ty, A.NeqOp) = ty
+              | operTy (ty, A.EqOp) = ty
+              | operTy _ = T.INT
             val left_ty = getTy left
-            val right_ty = getTy right
+            val expected = operTy (left_ty, oper)
             val left_join = T.join (left_ty, expected)
+            val right_ty = getTy right
             val actual = T.join (if T.wellTyped left_join then left_join else expected, right_ty)
           in
             if T.wellTyped left_ty andalso not (T.wellTyped left_join) then
@@ -256,14 +284,19 @@ and transExp (venv, tenv, loop, exp) =
           (case Symbol.look (tenv, typ) of
              SOME (record as Types.RECORD (fields, _)) =>
              let fun checkField (field, expected) =
-                     case findFieldEntry (field_exps, field) of
-                       SOME (_, exp, pos) =>
+                     case findFieldEntries (field_exps, field) of
+                       [(_, exp, pos)] =>
                        let val actual = getTy exp in
                          expect actual expected
                                 (E.FieldMismatch {pos=pos, field=field, actual=actual, expected=expected})
                        end
-                     | NONE => error (E.MissingField {pos=pos, field=field, expected=expected})
+                     | _ :: _ => error (E.DuplicateField {pos=pos, field=field})
+                     | [] => error (E.MissingField {pos=pos, field=field, expected=expected})
              in
+(*               ((ListPair.foldrEq checkFields fields field_exps
+                   handle ListPair.UnequalLengths =>
+                          error ());
+                  {exp=(), ty=record}) *)
                ((map checkField fields); {exp=(), ty=record})
              end
            | SOME actual => (error (E.NonRecordType {pos=pos, sym=typ, actual=actual});
@@ -345,20 +378,21 @@ and transExp (venv, tenv, loop, exp) =
                         decs
           in transExp (venv', tenv', loop, body) end
 
-      and transArray {typ, size, init, pos} =
+      and transArray {typ, dims, init, pos} =
           let
-            val {exp=_, ty=size_ty} = transExp (venv, tenv, loop, size)
+            val indices = length dims
             val {exp=_, ty=init_ty} = transExp (venv, tenv, loop, init)
           in
-            expect size_ty T.INT
-                   (E.ArraySizeMismatch {pos=(A.getPosExp size), actual=size_ty});
+            (app checkIndexExp dims);
             case resolveTyName (tenv, typ, pos) of
-              array_ty as T.ARRAY (element_ty, _) =>
+              array_ty as T.ARRAY (element_ty, dim, _) =>
+              (errorIf (indices <> dim)
+                       (E.DimensionMismatch{pos=pos, ty=array_ty, expected=dim, actual=indices});
               (expect init_ty element_ty
                       (E.ArrayInitMismatch {pos=(A.getPosExp init),
                                             actual=init_ty,
                                             expected=element_ty});
-               {exp=(), ty=array_ty})
+               {exp=(), ty=array_ty}))
             | actual => (errorIf (T.wellTyped actual)
                                  (E.NonArrayType {pos=pos, sym=typ, actual=actual});
                          {exp=(), ty=T.TOP})

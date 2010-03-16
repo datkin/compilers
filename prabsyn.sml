@@ -32,9 +32,9 @@ fun print (outstream, e0) =
     | var(A.FieldVar(v,s,p),d) = (indent d; sayln "FieldVar(";
                                   var(v,d+1); sayln ",";
                                   indent(d+1); say(Symbol.name s); say ")")
-    | var(A.SubscriptVar(v,e,p),d) = (indent d; sayln "SubscriptVar(";
+    | var(A.SubscriptVar(v,es,p),d) = (indent d; sayln "SubscriptVar(";
                                       var(v,d+1); sayln ",";
-                                      exp(e,d+1); say ")")
+                                      map (fn e => exp(e,d+1)) es; say ")")
   and exp(A.VarExp v, d) = (indent d; sayln "VarExp("; var(v,d+1); say ")")
     | exp(A.NilExp p, d) = (indent d; say "NilExp")
     | exp(A.IntExp (i, p), d) = (indent d; say "IntExp("; say(Int.toString i);
@@ -78,9 +78,9 @@ fun print (outstream, e0) =
     | exp(A.LetExp{decs,body,pos},d) =
                 (indent d; say "LetExp([";
                  dolist d dec decs; sayln "],"; exp(body,d+1); say")")
-    | exp(A.ArrayExp{typ,size,init,pos},d) =
+    | exp(A.ArrayExp{typ,dims,init,pos},d) =
                 (indent d; say "ArrayExp("; say(Symbol.name typ); sayln ",";
-                 exp(size,d+1); sayln ","; exp(init,d+1); say ")")
+                 (map (fn size => exp(size,d+1)) dims); sayln ","; exp(init,d+1); say ")")
 
 
   and dec(A.FunctionDec l, d) =
@@ -118,8 +118,9 @@ fun print (outstream, e0) =
                          say (Symbol.name typ); say ")")
                  in indent d; say "RecordTy["; dolist d f l; say "]"
                 end
-    | ty(A.ArrayTy(s,p),d) = (indent d; say "ArrayTy("; say(Symbol.name s);
-                              say ")")
+    | ty(A.ArrayTy(s,dim,p),d) = (indent d; say "ArrayTy("; say(Symbol.name s);
+                                  say (Int.toString d);
+                                  say ")")
 
  in  exp(e0,0); sayln ""; TextIO.flushOut outstream
 end

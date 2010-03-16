@@ -1,13 +1,16 @@
 structure Types =
 struct
 
+  (* Use an integer to test type equality. This allows us to test
+   * type equality. In practice we will use the declaration position
+   * of a type as the unique type identifier. *)
   type unique = int (* unit ref *)
 
   datatype ty = NIL
               | INT
               | UNIT
               | STRING
-              | ARRAY of ty * unique
+              | ARRAY of ty * int * unique
               | NAME of Symbol.symbol * ty option ref
               | RECORD of (Symbol.symbol * ty) list * unique
               (* Types for the type lattice: *)
@@ -23,7 +26,7 @@ struct
           | safeEqualTy (STRING, STRING, _) = true
           | safeEqualTy (TOP, TOP, _) = true
           | safeEqualTy (BOTTOM, BOTTOM, _) = true
-          | safeEqualTy (ARRAY (_, unique1), ARRAY (_, unique2), _) = unique1 = unique2
+          | safeEqualTy (ARRAY (_, _, unique1), ARRAY (_, _, unique2), _) = unique1 = unique2
           | safeEqualTy (RECORD (_, unique1), RECORD (_, unique2), _) = unique1 = unique2
           (* The only recursive calls occur on NAME types, so infinite loops can
            * only occur for cyclic NAMEs (ie we do not traverse a record's
@@ -83,11 +86,20 @@ struct
           | safeToString (STRING, _) = "string"
           | safeToString (TOP, _) = "Top"
           | safeToString (BOTTOM, _) = "Bottom"
-          | safeToString (this as ARRAY (ty, unique), seen) =
+          | safeToString (this as ARRAY (ty, dim, unique), seen) =
+            "(" ^
+            (String.concatWith " * " (List.tabulate (dim, (fn _ => "array")))) ^
+            " of " ^ safeToString (ty, this :: seen) ^
+            ", #" ^ Int.toString unique ^
+            ")"
+
+            (*
             if absent (this, seen) then
-              "array(" ^ safeToString (ty, this :: seen) ^ ", #" ^ Int.toString unique ^ ")"
+              "array(" ^ safeToString (ty, this :: seen) ^ ", "
+              ^ Int.toString dim ^ ", #" ^ Int.toString unique ^ ")"
             else
               "<" ^ Int.toString unique ^ ">"
+              *)
           | safeToString (this as NAME (sym, ty_ref), seen) =
             if absent (this, seen) then
               case !ty_ref of

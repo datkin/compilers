@@ -8,7 +8,7 @@ type pos = int   and   symbol = Symbol.symbol
        This is a rather annoying naming "scheme". *)
 datatype var = SimpleVar of symbol * pos
              | FieldVar of var * symbol * pos
-             | SubscriptVar of var * exp * pos
+             | SubscriptVar of var * exp list * pos
 
      and exp = VarExp of var
              | NilExp of pos
@@ -26,7 +26,7 @@ datatype var = SimpleVar of symbol * pos
                           lo: exp, hi: exp, body: exp, pos: pos}
              | BreakExp of pos
              | LetExp of {decs: dec list, body: exp, pos: pos}
-             | ArrayExp of {typ: symbol, size: exp, init: exp, pos: pos}
+             | ArrayExp of {typ: symbol, dims: exp list, init: exp, pos: pos}
 
      and dec = FunctionDec of fundec list
              | VarDec of {name: symbol,
@@ -38,7 +38,7 @@ datatype var = SimpleVar of symbol * pos
 
      and ty = NameTy of symbol * pos
             | RecordTy of field list
-            | ArrayTy of symbol * pos
+            | ArrayTy of symbol * int * pos
 
      and oper = PlusOp | MinusOp | TimesOp | DivideOp
               | EqOp | NeqOp | LtOp | LeOp | GtOp | GeOp
@@ -69,6 +69,6 @@ fun getPosExp (VarExp var) =
   | getPosExp (ForExp {var=_, escape=_, lo=_, hi=_, body=_, pos}) = pos
   | getPosExp (BreakExp pos) = pos
   | getPosExp (LetExp {decs=_, body=_, pos}) = pos
-  | getPosExp (ArrayExp {typ=_, size=_, init=_, pos}) = pos
+  | getPosExp (ArrayExp {typ=_, dims=_, init=_, pos}) = pos
 
 end

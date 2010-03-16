@@ -16,12 +16,14 @@ structure A = Absyn
 
 %nonterm Program of A.exp
        | Exp of A.exp
-       | ExpSeq of (A.exp * pos) list
+       | ExpList of A.exp list (* Non-empty, comma-separated list *)
+       | ExpSeq of (A.exp * pos) list (* Semicolon separated list *)
        | Arguments of A.exp list
        | RecordField of (Symbol.symbol * A.exp * pos)
        | RecordFields of (Symbol.symbol * A.exp * pos) list
        | LValue of A.var
        | Typ of A.ty
+       | ArrayDec of Symbol.symbol * int * pos
        | TypeDec of {name: Symbol.symbol, ty: A.ty, pos: pos}
        | TypeDecs of {name: Symbol.symbol, ty: A.ty, pos: pos} list
        | TypedField of A.field
@@ -147,14 +149,17 @@ Exp : NIL                             (A.NilExp (NILleft))
     | ID LBRACE RecordFields RBRACE   (A.RecordExp {fields=RecordFields,
                                                     typ=Symbol.symbol ID,
                                                     pos=IDleft})
-    | ID LBRACK Exp RBRACK OF Exp     (A.ArrayExp {typ=Symbol.symbol ID,
-                                                   size=Exp1,
-                                                   init=Exp2,
+    | ID LBRACK ExpList RBRACK OF Exp (A.ArrayExp {typ=Symbol.symbol ID,
+                                                   dims=ExpList,
+                                                   init=Exp,
                                                    pos=IDleft})
     | LET Decs IN ExpSeq END          (A.LetExp {decs=Decs,
                                                  body=A.SeqExp (ExpSeq,
                                                                 ExpSeqleft),
                                                  pos=LETleft})
+
+ExpList : Exp ([Exp])
+        | ExpList COMMA Exp (ExpList @ [Exp])
 
 ExpSeq :                      (nil)
        | Exp                  ([(Exp, Expleft)])
@@ -170,19 +175,22 @@ RecordFields :                                (nil)
              | RecordField                    ([RecordField])
              | RecordFields COMMA RecordField (RecordFields @ [RecordField])
 
-LValue : ID                       (A.SimpleVar (Symbol.symbol ID, IDleft))
-       | ID LBRACK Exp RBRACK     (A.SubscriptVar (A.SimpleVar
-                                                    (Symbol.symbol ID, IDleft),
-                                                  Exp,
-                                                  IDleft))
-       | LValue DOT ID            (A.FieldVar (LValue,
-                                               Symbol.symbol ID,
-                                               LValueleft))
-       | LValue LBRACK Exp RBRACK (A.SubscriptVar (LValue, Exp, LValueleft))
+LValue : ID                           (A.SimpleVar (Symbol.symbol ID, IDleft))
+       | ID LBRACK ExpList RBRACK     (A.SubscriptVar (A.SimpleVar
+                                                         (Symbol.symbol ID, IDleft),
+                                                       ExpList,
+                                                       IDleft))
+       | LValue DOT ID                (A.FieldVar (LValue,
+                                                   Symbol.symbol ID,
+                                                   LValueleft))
+       | LValue LBRACK ExpList RBRACK (A.SubscriptVar (LValue, ExpList, LValueleft))
 
 Typ : ID                        (A.NameTy (Symbol.symbol ID, IDleft))
     | LBRACE TypedFields RBRACE (A.RecordTy TypedFields)
-    | ARRAY OF ID               (A.ArrayTy (Symbol.symbol ID, ARRAYleft))
+    | ArrayDec                  (A.ArrayTy ArrayDec)
+
+ArrayDec : ARRAY OF ID          ((Symbol.symbol ID, 1, ARRAYleft))
+         | ARRAY TIMES ArrayDec (let val (ty, num, _) = ArrayDec in (ty, num + 1, ARRAYleft) end)
 
 TypeDec : TYPE ID EQ Typ ({name=Symbol.symbol ID, ty=Typ, pos=TYPEleft})
 

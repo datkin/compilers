@@ -102,7 +102,7 @@ val s = Symbol.symbol
 val filetests =
     [{file="test1.tig",
       parse=(NONE : Absyn.exp option, SOME []),
-      check=(SOME (T.ARRAY (T.INT, 49)), SOME [])},
+      check=(SOME (T.ARRAY (T.INT, 1, 49)), SOME [])},
 
      (* a) This test case should have no errors.
       * b) If this test case were an error, some errors could be
@@ -110,7 +110,7 @@ val filetests =
       *    and then suppressing subsequent errors. See test case below. *)
      {file="test2.tig",
       parse=(NONE, SOME []),
-      check=(SOME (T.ARRAY (T.INT, 79)), SOME [])},
+      check=(SOME (T.ARRAY (T.INT, 1, 79)), SOME [])},
 
      {file="test3.tig",
       parse=(NONE, SOME []),
@@ -178,7 +178,7 @@ val filetests =
              SOME [Error.OperandMismatch {pos=199,
                                           expected=Types.RECORD ([(s "name", T.STRING),
                                                                   (s "id", T.INT)], 75),
-                                          actual=T.ARRAY (T.INT, 46),
+                                          actual=T.ARRAY (T.INT, 1, 46),
                                           oper=Absyn.NeqOp}])},
 
      {file="test15.tig",
@@ -250,8 +250,8 @@ val filetests =
 
      {file="test29.tig",
       parse=(NONE, SOME []),
-      check=let val arrtype1 = T.ARRAY (T.INT, 44)
-              val arrtype2 = T.ARRAY (T.INT, 74) in
+      check=let val arrtype1 = T.ARRAY (T.INT, 1, 44)
+              val arrtype2 = T.ARRAY (T.INT, 1, 74) in
               (SOME arrtype1, SOME [Error.AssignmentMismatch {pos=105, expected=arrtype1, actual=arrtype2}])
             end},
 
@@ -295,7 +295,7 @@ val filetests =
 
      {file="test39.tig",
       parse=(NONE, SOME []),
-      check=(SOME T.INT, SOME [])},
+      check=(SOME T.INT, SOME [Error.FunRedefined {pos=194, name=s "g"}])},
 
      {file="test40.tig",
       parse=(NONE, SOME []),
@@ -340,7 +340,15 @@ val filetests =
 
      {file="queens.tig",
       parse=(NONE, SOME []),
-      check=(SOME T.UNIT, SOME [])}]
+      check=(SOME T.UNIT, SOME [])},
+
+     {file="index.tig",
+      parse=(NONE, SOME []),
+      check=(SOME T.UNIT, SOME [Error.DimensionMismatch {pos=86,
+                                                         actual=1,
+                                                         expected=2,
+                                                         ty=T.ARRAY (T.INT, 2, 8)},
+                                Error.NonIntSubscript {pos=122, actual=T.UNIT}])}]
 
 val nonfiletests =
     [{name="1", source="let type a = {a: int} var a := a{} in 0 end",
@@ -358,7 +366,7 @@ val nonfiletests =
 
      {name="4", source="let type arrtype = array of int var a : arrtype := arrtype[0] of 0 in a end",
       parse=(NONE, SOME []),
-      check=(SOME (T.ARRAY (T.INT, 6)), SOME [])},
+      check=(SOME (T.ARRAY (T.INT, 1, 6)), SOME [])},
 
      (* test seqs *)
      {name="5", source="(5; \"foo\"; ())",
@@ -405,7 +413,7 @@ val nonfiletests =
      (* Should programs with type errors such as this be TOP instead? *)
      {name="15", source="let type arr = array of int var myarr := arr[10] of 0 in myarr[()] end",
       parse=(NONE, SOME []),
-      check=(SOME T.INT, SOME [Error.NonIntSubscript {pos=59, actual=T.UNIT}])},
+      check=(SOME T.INT, SOME [Error.NonIntSubscript {pos=65, actual=T.UNIT}])},
 
      (* TODO: is this actually legal? *)
      {name="16", source="while 1 do let function f() = (break; ()) in () end",
@@ -441,7 +449,23 @@ val nonfiletests =
       check=(SOME T.INT, SOME[Error.OperandMismatch{pos=8,
                                                     expected=T.STRING,
                                                     actual=T.INT,
-                                                    oper=Absyn.EqOp}])}]
+                                                    oper=Absyn.EqOp}])},
+
+    {name="24", source="\"foo\" < \"quux\"",
+     parse=(NONE, SOME []),
+     check=(SOME T.INT, SOME [])},
+
+    {name="25", source="let type rec = {} var a := rec {} var b := rec {} in a < b end",
+     parse=(NONE, SOME []),
+     check=(SOME T.INT, SOME[Error.OperandMismatch{pos=55,
+                                                   expected=T.INT,
+                                                   actual=T.RECORD ([], 6),
+                                                   oper=Absyn.LtOp}])},
+
+    {name="26", source="let type r = {a: int} var b := r {a=1, a=2} in () end",
+     parse=(NONE, SOME []),
+     check=(SOME T.UNIT, SOME[Error.DuplicateField{pos=33,
+                                                   field=s "a"}])}]
 
 fun run () =
     let val results = List.concat [(map (fn {file, parse, check} =>

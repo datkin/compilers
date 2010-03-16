@@ -1,0 +1,7 @@
+let
+  type matrix = array * array of int
+  var a := matrix [10, 10] of 0
+  var b := matrix [10] of 0
+in
+  a[0, 0]; a[0, ()]; ()
+end

@@ -37,7 +37,10 @@ datatype error = Lex of {pos: pos, msg: string}
                  (* When the declared type doesn't match the actual type. *)
                | TypeMismatch of {pos: pos, actual: Types.ty, expected: Types.ty}
                | TypeRedefined of {pos: pos, name: symbol}
+               | FunRedefined of {pos: pos, name: symbol}
                | ArgumentRedefined of {pos: pos, name: symbol, argument: symbol}
+               | DuplicateField of {pos: pos, field: symbol}
+               | DimensionMismatch of {pos: pos, ty: Types.ty, actual: int, expected: int}
 end
 
 signature ERRORMSG =
@@ -178,8 +181,14 @@ type pos = int and symbol = Symbol.symbol
       mkStr pos ("Declared type and actual type don't agree") (* todo: pp types *)
     | toString (Error.TypeRedefined {pos, name}) =
       mkStr pos ("Type name bound more than once in this declaration: " ^ n name)
+    | toString (Error.FunRedefined {pos, name}) =
+      mkStr pos ("Function name bound more than once in this declaration: " ^ n name)
     | toString (Error.ArgumentRedefined {pos, name, argument}) =
       mkStr pos ("Argument " ^ n argument ^ " redefined in " ^ n name)
+    | toString (Error.DuplicateField {pos, field}) =
+      mkStr pos ("Field " ^ n field ^ " defined multiple times")
+    | toString (Error.DimensionMismatch {pos, ty, actual, expected}) =
+      mkStr pos ("Provided " ^ Int.toString actual ^ " indices to " ^ Int.toString expected ^ "-dimensional " ^ Types.toString ty)
 
   fun display err = print (toString err)
 
