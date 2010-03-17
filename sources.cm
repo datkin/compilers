@@ -15,6 +15,11 @@ tiger.lex
 tiger.sml
 translate.sml
 types.sml
+frame.sml
+mipsframe.sml
+temp.sig
+temp.sml
+findescape.sml
 $/basis.cm
 $/ml-yacc-lib.cm
 $/smlnj-lib.cm

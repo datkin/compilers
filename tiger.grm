@@ -143,7 +143,7 @@ Exp : NIL                             (A.NilExp (NILleft))
                                                    body=Exp2,
                                                    pos=Exp1left})
     | FOR ID ASSIGN Exp TO Exp DO Exp (A.ForExp {var=Symbol.symbol ID,
-                                                 escape=ref true,
+                                                 escape=ref false,
                                                  lo=Exp1, hi=Exp2, body=Exp3,
                                                  pos=FORleft})
     | ID LBRACE RecordFields RBRACE   (A.RecordExp {fields=RecordFields,
@@ -198,7 +198,7 @@ TypeDecs : TypeDec          ([TypeDec])
          | TypeDecs TypeDec (TypeDecs @ [TypeDec])
 
 TypedField : ID COLON ID ({name=Symbol.symbol ID1,
-                           escape=ref true,
+                           escape=ref false,
                            typ=Symbol.symbol ID2,
                            pos=ID1left})
 
@@ -214,12 +214,12 @@ Decs : Dec      ([Dec])
      | Decs Dec (Decs @ [Dec])
 
 VarDec : VAR ID ASSIGN Exp          (A.VarDec {name=Symbol.symbol ID,
-                                               escape=ref true,
+                                               escape=ref false,
                                                typ=NONE,
                                                init=Exp,
                                                pos=VARleft})
        | VAR ID COLON ID ASSIGN Exp (A.VarDec {name=Symbol.symbol ID1,
-                                               escape=ref true,
+                                               escape=ref false,
                                                typ=SOME (Symbol.symbol ID2,
                                                          ID2left),
                                                init=Exp,
