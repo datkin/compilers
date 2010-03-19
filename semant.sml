@@ -421,6 +421,10 @@ and transExp (venv, tenv, level, loop, exp) =
          {exp=(), ty=Types.BOTTOM})
     end
 
-fun transProg exp = transExp (Env.base_venv, Env.base_tenv, Translate.outermost, false, exp)
+fun transProg exp = transExp (Env.base_venv,
+                              Env.base_tenv,
+                              Translate.newLevel {name=Temp.newLabel (), parent=Translate.outermost, formals=[]},
+                              false,
+                              exp)
 
 end

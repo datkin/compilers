@@ -13,18 +13,22 @@ end
 structure Translate : TRANSLATE =
 struct
 type exp = unit
-type level = {depth: int, frame: Frame.frame}
+datatype level = Top | Nested of {parent: level, frame: Frame.frame}
 type access = level * Frame.access
 
-val outermost = {depth=0, frame=Frame.newFrame {name=Temp.newLabel (), formals=[]}}
+val outermost = Top
 
-fun newLevel {parent={depth, frame}, name, formals} =
-    {depth=depth+1, frame=Frame.newFrame {name=name, formals=true :: formals}}
+fun newLevel {parent, name, formals} =
+    Nested {parent=parent, frame=Frame.newFrame {name=name, formals=true :: formals}}
 
-fun formals (level as {depth, frame}) =
-    case Frame.formals frame of
-      [] => (ErrorMsg.impossible "Frame has no static link"; [])
-    | _ :: formals => map (fn frameAccess => (level, frameAccess)) formals
+fun formals (level as (Nested {parent, frame})) =
+    (case Frame.formals frame of
+       [] => (ErrorMsg.impossible "Frame has no static link"; [])
+     | _ :: formals => map (fn frameAccess => (level, frameAccess)) formals)
+  | formals Top = []
 
-fun allocLocal (level as {depth, frame}) escapes = (level, Frame.allocLocal frame escapes)
+fun allocLocal (level as Nested {parent, frame}) escapes = (level, Frame.allocLocal frame escapes)
+  | allocLocal Top _ = (ErrorMsg.impossible "Attempted to allocate in the outermost frame.";
+                      raise Fail "Attempted to allocate in the outermost frame.")
+
 end
