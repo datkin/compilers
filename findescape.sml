@@ -6,23 +6,18 @@ struct
   type depth = int
   type escEnv = (depth * bool ref) Symbol.table
 
-  fun traverseVar (env: escEnv, d: depth, s: A.var) : unit =
+  fun traverseVar (env: escEnv, d: depth, s: A.var) =
     case s of
        A.SubscriptVar (var, exps, _) => ((app (fn e => (traverseExp (env, d, e)))
                                               exps);
                                          traverseVar (env, d, var))
      | A.FieldVar (var, _, _) => traverseVar (env, d, var)
      | A.SimpleVar (sym, _) =>
-         let
-           val SOME (depth', escape) = Symbol.look (env, sym)
-         in
-           if depth' < d then
-             escape := true
-           else
-             ()
-         end
+       case Symbol.look (env, sym) of
+         SOME (depth', escape) => if depth' < d then escape := true else ()
+       | NONE => ()
 
-  and traverseExp (env: escEnv, d: depth, s: A.exp): unit =
+  and traverseExp (env: escEnv, d: depth, s: A.exp) =
     let
       fun traverse exp = traverseExp (env, d, exp)
     in
@@ -49,7 +44,7 @@ struct
       | _ => ()
     end
 
-  and traverseDecs (env, _, []): escEnv = env
+  and traverseDecs (env, _, []) = env
     | traverseDecs (env, depth, dec :: decs) =
       let
         fun extendEnv ({name, escape, typ, pos}, env) =
@@ -65,6 +60,6 @@ struct
       end
 
 
-  fun findEscape(prog : A.exp) : unit = traverseExp (Symbol.empty, 0, prog)
+  fun findEscape(prog: A.exp) = traverseExp (Symbol.empty, 0, prog)
 
 end

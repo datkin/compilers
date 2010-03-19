@@ -118,10 +118,16 @@ fun expect actual expected err =
  * recursive calls will type check just fine. *)
 and transFunDec (venv, tenv, {name, params, result, body, pos}) =
     let
-      fun bind {name, escape=_, typ, pos} =
-          (name, Env.VarEntry {ty=resolveTyName (tenv, typ, pos)})
-      val venv' = foldr Symbol.enter' venv (map bind params)
-      val {exp=_, ty=actual} = transExp (venv', tenv, false, body)
+      fun bind ({name, escape=_, typ, pos}, access) =
+          (name, Env.VarEntry {access=access, ty=resolveTyName (tenv, typ, pos)})
+      val level = case Symbol.look (venv, name) of
+                    SOME (Env.FunEntry e) => #level e
+                  | _ => (ErrorMsg.impossible ("Couldn't find function " ^ n name);
+                          raise Fail ("Couldn't find function " ^ n name))
+      val venv' = foldr Symbol.enter' venv (ListPair.mapEq bind
+                                                           (params,
+                                                            (Translate.formals level)))
+      val {exp=_, ty=actual} = transExp (venv', tenv, level, false, body)
     in
       case result of
         NONE => expect actual T.UNIT
@@ -133,7 +139,7 @@ and transFunDec (venv, tenv, {name, params, result, body, pos}) =
       {exp=(), ty=Types.UNIT}
     end
 
-and transDec (venv, tenv, _, A.FunctionDec fundecs) = (* functions *)
+and transDec (venv, tenv, level, _, A.FunctionDec fundecs) = (* functions *)
     let
       (* Process a function argument specification, adding the type
        * of the argument and its name to an accumulator. The types
@@ -150,13 +156,18 @@ and transDec (venv, tenv, _, A.FunctionDec fundecs) = (* functions *)
       fun addFun (dec as {name, params, result, body, pos},
                   (seen, venv)) =
           if absent (name, seen) then
-            (name :: seen,
-             Symbol.enter (venv,
-                           name,
-                           Env.FunEntry {formals=(#1 (foldl (paramToFormal name)
-                                                            ([], [])
-                                                            params)),
-                                         result=resultToTy result}))
+            let
+              val label = Temp.newLabel ()
+              val level' = Translate.newLevel {parent=level, name=label,
+                                               formals=map (fn dec => !(#escape dec)) params}
+              val entry = Env.FunEntry {label=label, level=level',
+                                        formals=(#1 (foldl (paramToFormal name)
+                                                           ([], [])
+                                                           params)),
+                                        result=resultToTy result}
+            in
+              (name :: seen, Symbol.enter (venv, name, entry))
+            end
           else
             (error (Error.FunRedefined {pos=pos, name=name});
              (seen, venv))
@@ -165,9 +176,10 @@ and transDec (venv, tenv, _, A.FunctionDec fundecs) = (* functions *)
       (map (fn fundec => transFunDec (venv', tenv, fundec)) fundecs;
        {venv=venv', tenv=tenv})
     end
-  | transDec (venv, tenv, loop, A.VarDec {name, escape, typ, init, pos}) = (* var *)
+  | transDec (venv, tenv, level, loop, A.VarDec {name, escape, typ, init, pos}) = (* var *)
     let
-      val {exp=_, ty=actual} = transExp (venv, tenv, loop, init)
+      val access = Translate.allocLocal level (!escape)
+      val {exp=_, ty=actual} = transExp (venv, tenv, level, loop, init)
       val declared = case typ of
                        SOME (name, pos) => resolveTyName (tenv, name, pos)
                      | NONE => actual
@@ -175,9 +187,9 @@ and transDec (venv, tenv, _, A.FunctionDec fundecs) = (* functions *)
       errorIf (T.equalTy declared T.NIL) (E.NilInitialization {pos=pos, name=name});
       expect actual declared
              (E.AssignmentMismatch {pos=pos, actual=actual, expected=declared});
-      {venv=Symbol.enter (venv, name, Env.VarEntry {ty=declared}), tenv=tenv}
+      {venv=Symbol.enter (venv, name, Env.VarEntry {access=access, ty=declared}), tenv=tenv}
     end
-  | transDec (venv, tenv, _, A.TypeDec decs) = (* types *)
+  | transDec (venv, tenv, _, _, A.TypeDec decs) = (* types *)
     let fun addType ({name, ty, pos}, (new, tenv)) =
             if absent (name, new) then
               (new @ [name], Symbol.enter (tenv, name, transTy (tenv, ty, pos)))
@@ -193,9 +205,9 @@ and transDec (venv, tenv, _, A.FunctionDec fundecs) = (* functions *)
       {venv=venv, tenv=tenv'}
     end
 
-and transExp (venv, tenv, loop, exp) =
+and transExp (venv, tenv, level, loop, exp) =
     let
-      fun getTy exp = #ty (transExp (venv, tenv, loop, exp))
+      fun getTy exp = #ty (transExp (venv, tenv, level, loop, exp))
 
       and checkIndexExp exp =
           let val actual = getTy exp in
@@ -206,7 +218,7 @@ and transExp (venv, tenv, loop, exp) =
       (* Determine the type of an lvalue. *)
       and transVar (A.SimpleVar (name, pos)) = (* var *)
           (case Symbol.look (venv, name) of
-             SOME (Env.VarEntry {ty}) => {exp=(), ty=ty}
+             SOME (Env.VarEntry {access, ty}) => {exp=(), ty=ty}
            | SOME (Env.FunEntry _) => (error (E.NameBoundToFunction {pos=pos, sym=name});
                                        {exp=(), ty=T.TOP})
            | NONE => (error (E.UndefinedVar {pos=pos, sym=name});
@@ -233,13 +245,14 @@ and transExp (venv, tenv, loop, exp) =
                                       (E.NonArrayAccess {pos=pos, actual=ty});
                               {exp=(), ty=T.TOP})
           end
+
       and transCall {func=name, args=arg_exps, pos} =
           (case Symbol.look (venv, name) of
              NONE => (error (E.UndefinedFunction {pos=pos, sym=name});
                       {exp=(), ty=T.TOP})
            | SOME (Env.VarEntry _) => (error (E.NameBoundToVar {pos=pos, sym=name});
                                        {exp=(), ty=T.TOP})
-           | SOME (Env.FunEntry {formals, result}) =>
+           | SOME (Env.FunEntry {label, level, formals, result}) =>
              (* Verify the arg types against the declared types. *)
              (ListPair.appEq (fn (expected, exp) =>
                                  let val actual = getTy exp in
@@ -295,14 +308,14 @@ and transExp (venv, tenv, loop, exp) =
 
       and transSeq exps =
           foldl (fn ((exp, _), _) =>
-                    transExp (venv, tenv, loop, exp))
+                    transExp (venv, tenv, level, loop, exp))
                 {exp=(), ty=T.UNIT}
                 exps
 
       and transAssign {var, exp, pos} =
           let
             val {exp=_, ty=expected} = transVar var
-            val {exp=_, ty=actual} = transExp (venv, tenv, loop, exp)
+            val {exp=_, ty=actual} = transExp (venv, tenv, level, loop, exp)
           in
             (expect actual expected
                     (E.AssignmentMismatch {pos=pos, actual=actual, expected=expected});
@@ -311,8 +324,8 @@ and transExp (venv, tenv, loop, exp) =
 
       and transIf {test, then', else', pos} =
           let
-            val {exp=_, ty=test_ty} = transExp (venv, tenv, loop, test)
-            val {exp=_, ty=then_ty} = transExp (venv, tenv, loop, then')
+            val {exp=_, ty=test_ty} = transExp (venv, tenv, level, loop, test)
+            val {exp=_, ty=then_ty} = transExp (venv, tenv, level, loop, then')
             val else_ty = case else' of
                             NONE => T.UNIT
                           | SOME exp => getTy exp
@@ -333,8 +346,8 @@ and transExp (venv, tenv, loop, exp) =
 
       and transWhile {test, body, pos} =
           let
-            val {exp=_, ty=test_ty} = transExp (venv, tenv, loop, test)
-            val {exp=_, ty=body_ty} = transExp (venv, tenv, true, body)
+            val {exp=_, ty=test_ty} = transExp (venv, tenv, level, loop, test)
+            val {exp=_, ty=body_ty} = transExp (venv, tenv, level, true, body)
           in
             expect test_ty T.INT
                    (E.ConditionMismatch {pos=(A.getPosExp test), actual=test_ty});
@@ -345,10 +358,11 @@ and transExp (venv, tenv, loop, exp) =
 
       and transFor {var, escape, lo, hi, body, pos} =
           let
-            val {exp=_, ty=lo_ty} = transExp (venv, tenv, loop, lo)
-            val {exp=_, ty=hi_ty} = transExp (venv, tenv, loop, hi)
-            val venv' = Symbol.enter (venv, var, Env.VarEntry {ty=Types.INT})
-            val {exp=_, ty=body_ty} = transExp (venv', tenv, true, body)
+            val access = Translate.allocLocal level (!escape)
+            val {exp=_, ty=lo_ty} = transExp (venv, tenv, level, loop, lo)
+            val {exp=_, ty=hi_ty} = transExp (venv, tenv, level, loop, hi)
+            val venv' = Symbol.enter (venv, var, Env.VarEntry {access=access, ty=Types.INT})
+            val {exp=_, ty=body_ty} = transExp (venv', tenv, level, true, body)
           in
             expect lo_ty Types.INT
                    (E.ForRangeMismatch {pos=(A.getPosExp lo), which="lower", actual=lo_ty});
@@ -362,15 +376,15 @@ and transExp (venv, tenv, loop, exp) =
       and transLet {decs, body, pos} =
           let val {venv=venv', tenv=tenv'} =
                   foldl (fn (dec, {venv, tenv}) =>
-                            transDec (venv, tenv, loop, dec))
+                            transDec (venv, tenv, level, loop, dec))
                         {venv=venv, tenv=tenv}
                         decs
-          in transExp (venv', tenv', loop, body) end
+          in transExp (venv', tenv', level, loop, body) end
 
       and transArray {typ, dims, init, pos} =
           let
             val indices = length dims
-            val {exp=_, ty=init_ty} = transExp (venv, tenv, loop, init)
+            val {exp=_, ty=init_ty} = transExp (venv, tenv, level, loop, init)
           in
             (app checkIndexExp dims);
             case resolveTyName (tenv, typ, pos) of
@@ -407,6 +421,6 @@ and transExp (venv, tenv, loop, exp) =
          {exp=(), ty=Types.BOTTOM})
     end
 
-fun transProg exp = transExp (Env.base_venv, Env.base_tenv, false, exp)
+fun transProg exp = transExp (Env.base_venv, Env.base_tenv, Translate.outermost, false, exp)
 
 end

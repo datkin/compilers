@@ -1,27 +1,31 @@
 structure MipsFrame : FRAME =
 struct
   val offset = ~4
+  val maxRegisterArgs = 4
   datatype access = InFrame of int | InReg of Temp.temp
-  type frame = {formals : access list, localCount : int ref,
-                name : Temp.label, frameOffset : int ref}
+  type frame = {formals: access list, localCount: int ref,
+                name: Temp.label, frameOffset: int ref}
 
-  fun escapeToAccess (true, (access, frameOffset)) =
-        (InFrame (frameOffset + offset) :: access, frameOffset + offset)
-    | escapeToAccess (false, (access, frameOffset)) =
-        (InReg (Temp.newtemp ()) :: access, frameOffset)
+  fun escapeToAccess (true, (access, frameOffset, registerArgs)) =
+      (InFrame (frameOffset + offset) :: access, frameOffset + offset, registerArgs)
+    | escapeToAccess (false, (access, frameOffset, registerArgs)) =
+      if registerArgs < maxRegisterArgs then
+        (InReg (Temp.newTemp ()) :: access, frameOffset, registerArgs + 1)
+      else
+        (InFrame (frameOffset + offset) :: access, frameOffset + offset, registerArgs)
 
   fun newFrame {name, formals} =
     let
-      val (formals, frameOffset) = (foldr escapeToAccess ([], 0) formals)
+      val (formals, frameOffset, _) = (foldl escapeToAccess ([], 0, 0) formals)
     in
-      {name = name, formals = formals,
+      {name = name, formals = (rev formals),
        localCount = ref 0, frameOffset = ref frameOffset}
     end
 
-  fun name (f : frame) = #name f
-  fun formals (f : frame) = #formals f
+  fun name (f: frame) = #name f
+  fun formals (f: frame) = #formals f
 
-  fun allocLocal (frame : frame) true =
+  fun allocLocal (frame: frame) true =
         let
           val localCount = #localCount frame
           val frameOffset = #frameOffset frame
@@ -35,7 +39,7 @@ struct
           val localCount = #localCount frame
         in
           (localCount := !localCount + 1;
-           InReg (Temp.newtemp ()))
+           InReg (Temp.newTemp ()))
         end
 end
 

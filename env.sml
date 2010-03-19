@@ -2,8 +2,12 @@ signature ENV =
 sig
   type ty = Types.ty (* Is this supposed to be bound? *)
 
-  datatype enventry = VarEntry of {ty: ty}
-                    | FunEntry of {formals: ty list, result: ty}
+  datatype enventry = VarEntry of {access: Translate.access,
+                                   ty: ty}
+                    | FunEntry of {label: Temp.label,
+                                   level: Translate.level,
+                                   formals: ty list,
+                                   result: ty}
 
   val base_tenv : ty Symbol.table
   val base_venv : enventry Symbol.table
@@ -13,8 +17,12 @@ structure Env :> ENV =
 struct
 type ty = Types.ty
 
-datatype enventry = VarEntry of {ty: ty}
-                  | FunEntry of {formals: ty list, result: ty}
+datatype enventry = VarEntry of {access: Translate.access,
+                                 ty: ty}
+                  | FunEntry of {label: Temp.label,
+                                 level: Translate.level,
+                                 formals: ty list,
+                                 result: ty}
 
 fun s (str) = Symbol.symbol str;
 
@@ -23,17 +31,27 @@ val base_tenv = foldr Symbol.enter' Symbol.empty [
   (s "int", Types.INT)
 ];
 
+fun newBuiltin (name, formals, result) =
+    let
+      val label = Temp.namedLabel name
+      val level = Translate.newLevel {parent=Translate.outermost,
+                                      name=label,
+                                      formals=map (fn _ => false) formals}
+    in
+      (s name, FunEntry {label=label, level=level, formals=formals, result=result})
+    end
+
 val base_venv = foldr Symbol.enter' Symbol.empty [
-  (s "print", FunEntry {formals=[Types.STRING], result=Types.UNIT}),
-  (s "flush", FunEntry {formals=[], result=Types.UNIT}),
-  (s "getchar", FunEntry {formals=[], result=Types.STRING}),
-  (s "ord", FunEntry {formals=[Types.STRING], result=Types.INT}),
-  (s "chr", FunEntry {formals=[Types.INT], result=Types.STRING}),
-  (s "size", FunEntry {formals=[Types.STRING], result=Types.INT}),
-  (s "substring", FunEntry {formals=[Types.STRING, Types.INT, Types.INT], result=Types.STRING}),
-  (s "concat", FunEntry {formals=[Types.STRING, Types.STRING], result=Types.STRING}),
-  (s "not", FunEntry {formals=[Types.INT], result=Types.INT}),
-  (s "exit", FunEntry {formals=[Types.INT], result=Types.BOTTOM})
+  newBuiltin ("print", [Types.STRING], Types.UNIT),
+  newBuiltin ("flush", [], Types.UNIT),
+  newBuiltin ("getchar", [], Types.STRING),
+  newBuiltin ("ord", [Types.STRING], Types.INT),
+  newBuiltin ("chr", [Types.INT], Types.STRING),
+  newBuiltin ("size", [Types.STRING], Types.INT),
+  newBuiltin ("substring", [Types.STRING, Types.INT, Types.INT], Types.STRING),
+  newBuiltin ("concat", [Types.STRING, Types.STRING], Types.STRING),
+  newBuiltin ("not", [Types.INT], Types.INT),
+  newBuiltin ("exit", [Types.INT], Types.BOTTOM)
 ];
 
 end

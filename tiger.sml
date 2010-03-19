@@ -3,7 +3,11 @@ struct
 
 fun compile (name, source) =
     (ErrorMsg.reset name;
-     let val result = Semant.transProg (Parse.parse (name, source)) in
+     let
+       val ast = Parse.parse (name, source)
+       val _ = FindEscape.findEscape ast
+       val result = Semant.transProg ast
+     in
        (app ErrorMsg.display (!ErrorMsg.errorLog);
         result)
      end)
