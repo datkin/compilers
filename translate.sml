@@ -15,6 +15,11 @@ sig
   val fieldVar : (exp * int) -> exp
   val subscriptVar : (exp * exp list * int) -> exp
 
+  val assign : (exp * exp) -> exp
+  val sequence : exp list -> exp
+  val whileExp : (exp * exp) -> exp
+  val forExp : (exp * exp * exp * exp) -> exp
+
   val debug : exp -> unit
   val temp : unit -> exp
 end
@@ -148,6 +153,50 @@ struct
                                   T.ESEQ (code, T.BINOP (T.MUL,
                                                          T.CONST Frame.wordSize,
                                                          offsetExp))))))
+    end
+
+  fun assign (lExp, rExp) = Nx (T.MOVE (unEx lExp, unEx rExp))
+
+  fun sequence [] = Ex (T.CONST 0)
+    | sequence [exp] = exp
+    | sequence (exp :: exps) =
+        Ex (T.ESEQ (unNx exp, unEx (sequence exps)))
+
+  fun whileExp (testExp, bodyExp) =
+    let
+      val testLabel = Temp.newLabel ()
+      val bodyLabel = Temp.newLabel ()
+      val doneLabel = Temp.newLabel ()
+      val test = unCx testExp
+      val body = unNx bodyExp
+    in
+      Nx (seq [T.LABEL testLabel,
+               test (bodyLabel, doneLabel),
+               T.LABEL bodyLabel,
+               body,
+               T.JUMP (T.NAME testLabel, [testLabel]),
+               T.LABEL doneLabel])
+    end
+
+  fun forExp (varExp, initExp, limitExp, bodyExp) =
+    let
+      val var = unEx varExp
+      val init = unEx initExp
+      val limit = unEx limitExp
+      val body = unNx bodyExp
+      val bodyLabel = Temp.newLabel ()
+      val incrLabel = Temp.newLabel ()
+      val doneLabel = Temp.newLabel ()
+    in
+      Nx (seq [T.MOVE (var, init),
+               T.CJUMP (T.LE, var, limit, bodyLabel, doneLabel),
+               T.LABEL bodyLabel,
+               body,
+               T.CJUMP (T.LT, var, limit, incrLabel, doneLabel),
+               T.LABEL incrLabel,
+               T.MOVE (var, T.BINOP (T.PLUS, var, T.CONST 1)),
+               T.JUMP (T.NAME bodyLabel, [bodyLabel]),
+               T.LABEL doneLabel])
     end
 
     (* TODO: REMOVE ME! *)
