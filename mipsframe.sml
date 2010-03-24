@@ -1,7 +1,12 @@
-structure MipsFrame : FRAME =
+structure MipsFrame :> FRAME =
 struct
+  structure T = Tree
+
   val offset = ~4
   val maxRegisterArgs = 4
+  val FP = Temp.newTemp ()
+  val wordSize = 4
+
   datatype access = InFrame of int | InReg of Temp.temp
   type frame = {formals: access list, localCount: int ref,
                 name: Temp.label, frameOffset: int ref}
@@ -41,6 +46,10 @@ struct
           (localCount := !localCount + 1;
            InReg (Temp.newTemp ()))
         end
+
+  fun exp (InFrame offset) fpExp = T.MEM (T.BINOP (T.PLUS, T.CONST offset, fpExp))
+    | exp (InReg temp) _         = T.TEMP temp
+
 end
 
 structure Frame : FRAME = MipsFrame

@@ -3,8 +3,10 @@ Group is
 absyn.sml
 env.sml
 errormsg.sml
+findescape.sml
 parse.sml
 prabsyn.sml
+printtree.sml
 semant.sml
 symbol.sml
 table.sig
@@ -14,12 +16,12 @@ tiger.grm
 tiger.lex
 tiger.sml
 translate.sml
+tree.sml
 types.sml
 frame.sml
 mipsframe.sml
 temp.sig
 temp.sml
-findescape.sml
 $/basis.cm
 $/ml-yacc-lib.cm
 $/smlnj-lib.cm

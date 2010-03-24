@@ -4,7 +4,7 @@ end =
 struct
 
 (* Useful abbreviations. *)
-structure A = Absyn and E = Error and T = Types
+structure A = Absyn and E = Error and T = Types and Tr = Translate
 val error = ErrorMsg.log
 val n = Symbol.name
 
@@ -136,7 +136,7 @@ and transFunDec (venv, tenv, {name, params, result, body, pos}) =
                              expect actual expected
                                     (E.TypeMismatch {pos=pos, actual=actual, expected=expected})
                            end;
-      {exp=(), ty=Types.UNIT}
+      {exp=Tr.BOGUS, ty=Types.UNIT}
     end
 
 and transDec (venv, tenv, level, _, A.FunctionDec fundecs) = (* functions *)
@@ -209,49 +209,59 @@ and transExp (venv, tenv, level, loop, exp) =
     let
       fun getTy exp = #ty (transExp (venv, tenv, level, loop, exp))
 
-      and checkIndexExp exp =
-          let val actual = getTy exp in
+      and transIdxExp exp =
+          let val {exp=idxExp, ty=actual} = transExp (venv, tenv, level, loop, exp) in
             expect actual T.INT
-                   (E.NonIntSubscript {pos=A.getPosExp exp, actual=actual})
+                   (E.NonIntSubscript {pos=A.getPosExp exp, actual=actual});
+            idxExp
           end
 
       (* Determine the type of an lvalue. *)
       and transVar (A.SimpleVar (name, pos)) = (* var *)
           (case Symbol.look (venv, name) of
-             SOME (Env.VarEntry {access, ty}) => {exp=(), ty=ty}
+             SOME (Env.VarEntry {access, ty}) =>
+                {exp=Tr.simpleVar (access, level), ty=ty}
            | SOME (Env.FunEntry _) => (error (E.NameBoundToFunction {pos=pos, sym=name});
-                                       {exp=(), ty=T.TOP})
+                                       {exp=Tr.BOGUS, ty=T.TOP})
            | NONE => (error (E.UndefinedVar {pos=pos, sym=name});
-                      {exp=(), ty=T.TOP}))
+                      {exp=Tr.BOGUS, ty=T.TOP}))
         | transVar (A.FieldVar (var, field, pos)) = (* record *)
           (case transVar var of
-             {exp=_, ty=record as T.RECORD (fields, _)} =>
-             (case List.find (fn (f', _) => field = f') fields of
-                SOME (_, ty) => {exp=(), ty=ty}
-              | NONE => (error (E.NoSuchField {pos=pos, field=field, record=record});
-                         {exp=(), ty=T.TOP}))
+             {exp=varExp, ty=record as T.RECORD (fields, _)} =>
+             let fun findAndCount (_,  result as (SOME ty, _)) = result
+                   | findAndCount ((f', ty), (NONE, i)) = if f' = field then
+                                                           (SOME ty, i)
+                                                          else
+                                                           (NONE, i + 1)
+             in
+               case foldl findAndCount (NONE, 0) fields of
+                    (SOME ty, i) => {exp=Tr.fieldVar (varExp, i), ty=ty}
+                  | (NONE, _) => (error (E.NoSuchField {pos=pos, field=field, record=record});
+                                  {exp=Tr.BOGUS, ty=T.TOP})
+             end
            | {exp=_, ty} => (error (E.NonRecordAccess {pos=pos, field=field, actual=ty});
-                             {exp=(), ty=T.TOP}))
+                             {exp=Tr.BOGUS, ty=T.TOP}))
         | transVar (A.SubscriptVar (var, exps, pos)) = (* array *)
-          let val indices = length exps
+          let
+            val indices = length exps
+            val idxExps = map transIdxExp exps
           in
-            (app checkIndexExp exps);
             case transVar var of
-              {exp=_, ty=array_ty as T.ARRAY (ty, dim, _)} =>
+              {exp=varExp, ty=array_ty as T.ARRAY (ty, dim, _)} =>
               (errorIf (indices <> dim)
-                       (E.DimensionMismatch{pos=pos, ty=array_ty, expected=dim, actual=indices});
-               {exp=(), ty=ty})
+                       (E.DimensionMismatch {pos=pos, ty=array_ty, expected=dim, actual=indices});
+               {exp=Tr.subscriptVar (varExp, idxExps, dim), ty=ty})
             | {exp=_, ty} => (errorIf (T.wellTyped ty)
                                       (E.NonArrayAccess {pos=pos, actual=ty});
-                              {exp=(), ty=T.TOP})
+                              {exp=Tr.BOGUS, ty=T.TOP})
           end
 
       and transCall {func=name, args=arg_exps, pos} =
           (case Symbol.look (venv, name) of
              NONE => (error (E.UndefinedFunction {pos=pos, sym=name});
-                      {exp=(), ty=T.TOP})
+                      {exp=Tr.BOGUS, ty=T.TOP})
            | SOME (Env.VarEntry _) => (error (E.NameBoundToVar {pos=pos, sym=name});
-                                       {exp=(), ty=T.TOP})
+                                       {exp=Tr.BOGUS, ty=T.TOP})
            | SOME (Env.FunEntry {label, level, formals, result}) =>
              (* Verify the arg types against the declared types. *)
              (ListPair.appEq (fn (expected, exp) =>
@@ -262,7 +272,7 @@ and transExp (venv, tenv, level, loop, exp) =
                              (formals, arg_exps)
               handle ListPair.UnequalLengths =>
                      error (E.ArityMismatch {pos=pos, name=name, actual=length arg_exps, expected=length formals});
-              {exp=(), ty=result}))
+              {exp=Tr.BOGUS, ty=result}))
 
       and transOp {left, oper, right, pos} =
           let
@@ -283,7 +293,7 @@ and transExp (venv, tenv, level, loop, exp) =
               error (E.OperandMismatch {pos=(A.getPosExp right), oper=oper, actual=right_ty, expected=left_join})
             else
               ();
-            {exp=(), ty=T.INT}
+            {exp=Tr.BOGUS, ty=T.INT}
           end
 
       and transRecord {fields=field_exps, typ, pos} =
@@ -299,17 +309,17 @@ and transExp (venv, tenv, level, loop, exp) =
                      | _ :: _ => error (E.DuplicateField {pos=pos, field=field})
                      | [] => error (E.MissingField {pos=pos, field=field, expected=expected})
              in
-               ((map checkField fields); {exp=(), ty=record})
+               ((map checkField fields); {exp=Tr.BOGUS, ty=record})
              end
            | SOME actual => (error (E.NonRecordType {pos=pos, sym=typ, actual=actual});
-                             {exp=(), ty=T.TOP})
+                             {exp=Tr.BOGUS, ty=T.TOP})
            | NONE => (error (E.UnboundRecordType {pos=pos, sym=typ});
-                      {exp=(), ty=T.TOP}))
+                      {exp=Tr.BOGUS, ty=T.TOP}))
 
       and transSeq exps =
           foldl (fn ((exp, _), _) =>
                     transExp (venv, tenv, level, loop, exp))
-                {exp=(), ty=T.UNIT}
+                {exp=Tr.BOGUS, ty=T.UNIT}
                 exps
 
       and transAssign {var, exp, pos} =
@@ -319,7 +329,7 @@ and transExp (venv, tenv, level, loop, exp) =
           in
             (expect actual expected
                     (E.AssignmentMismatch {pos=pos, actual=actual, expected=expected});
-             {exp=(), ty=T.UNIT})
+             {exp=Tr.BOGUS, ty=T.UNIT})
           end
 
       and transIf {test, then', else', pos} =
@@ -341,7 +351,7 @@ and transExp (venv, tenv, level, loop, exp) =
             | SOME exp => errorIf (T.wellTyped then_ty andalso T.wellTyped else_ty andalso
                                    not (T.wellTyped actual))
                                   (E.IfBranchMismatch {pos=(A.getPosExp exp), then'=then_ty, else'=else_ty});
-            {exp=(), ty=actual}
+            {exp=Tr.BOGUS, ty=actual}
           end
 
       and transWhile {test, body, pos} =
@@ -353,7 +363,7 @@ and transExp (venv, tenv, level, loop, exp) =
                    (E.ConditionMismatch {pos=(A.getPosExp test), actual=test_ty});
             expect body_ty T.UNIT
                    (E.NonUnitWhile {pos=(A.getPosExp body), actual=body_ty});
-            {exp=(), ty=Types.UNIT}
+            {exp=Tr.BOGUS, ty=Types.UNIT}
           end
 
       and transFor {var, escape, lo, hi, body, pos} =
@@ -370,7 +380,7 @@ and transExp (venv, tenv, level, loop, exp) =
                    (E.ForRangeMismatch {pos=(A.getPosExp hi), which="upper", actual=hi_ty});
             expect body_ty Types.UNIT
                    (E.NonUnitFor {pos=pos, actual=body_ty});
-            {exp=(), ty=T.UNIT}
+            {exp=Tr.BOGUS, ty=T.UNIT}
           end
 
       and transLet {decs, body, pos} =
@@ -386,7 +396,6 @@ and transExp (venv, tenv, level, loop, exp) =
             val indices = length dims
             val {exp=_, ty=init_ty} = transExp (venv, tenv, level, loop, init)
           in
-            (app checkIndexExp dims);
             case resolveTyName (tenv, typ, pos) of
               array_ty as T.ARRAY (element_ty, dim, _) =>
               (errorIf (indices <> dim)
@@ -395,16 +404,16 @@ and transExp (venv, tenv, level, loop, exp) =
                       (E.ArrayInitMismatch {pos=(A.getPosExp init),
                                             actual=init_ty,
                                             expected=element_ty});
-               {exp=(), ty=array_ty}))
+               {exp=Tr.BOGUS, ty=array_ty}))
             | actual => (errorIf (T.wellTyped actual)
                                  (E.NonArrayType {pos=pos, sym=typ, actual=actual});
-                         {exp=(), ty=T.TOP})
+                         {exp=Tr.BOGUS, ty=T.TOP})
           end
     in
       case exp of
-        A.NilExp _ => {exp=(), ty=T.NIL}
-      | A.IntExp _ => {exp=(), ty=T.INT}
-      | A.StringExp _ => {exp=(), ty=T.STRING}
+        A.NilExp _ => {exp=Tr.BOGUS, ty=T.NIL}
+      | A.IntExp _ => {exp=Tr.BOGUS, ty=T.INT}
+      | A.StringExp _ => {exp=Tr.BOGUS, ty=T.STRING}
       | A.VarExp var => transVar var
       | A.CallExp call => transCall call
       | A.OpExp op' => transOp op'
@@ -418,7 +427,7 @@ and transExp (venv, tenv, level, loop, exp) =
       | A.ArrayExp array => transArray array
       | A.BreakExp pos =>
         (errorIf (not loop) (E.IllegalBreak {pos=pos});
-         {exp=(), ty=Types.BOTTOM})
+         {exp=Tr.BOGUS, ty=Types.BOTTOM})
     end
 
 fun transProg exp = transExp (Env.base_venv,
