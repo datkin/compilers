@@ -3,6 +3,7 @@ sig
   type exp
   type level
   type access
+  type breakpoint
 
   val BOGUS : exp
 
@@ -17,8 +18,11 @@ sig
 
   val assign : (exp * exp) -> exp
   val sequence : exp list -> exp
-  val whileExp : (exp * exp) -> exp
-  val forExp : (exp * exp * exp * exp) -> exp
+  val whileExp : (exp * exp * breakpoint) -> exp
+  val forExp : (exp * exp * exp * exp * breakpoint) -> exp
+  val newBreakpoint : unit -> breakpoint
+  val break : breakpoint -> exp
+  val binop : Types.ty * exp * Absyn.oper * exp -> exp
 
   val debug : exp -> unit
   val temp : unit -> exp
@@ -26,7 +30,7 @@ end
 
 structure Translate :> TRANSLATE =
 struct
-  structure T = Tree
+  structure T = Tree and A = Absyn
   datatype exp = Ex of T.exp
                | Nx of T.stm
                | Cx of Temp.label * Temp.label -> T.stm
@@ -38,6 +42,7 @@ struct
 
   datatype level = Top | Nested of {parent: level, frame: Frame.frame, id: unit ref}
   type access = level * Frame.access
+  type breakpoint = Temp.label
 
   val outermost = Top
 
@@ -162,23 +167,22 @@ struct
     | sequence (exp :: exps) =
         Ex (T.ESEQ (unNx exp, unEx (sequence exps)))
 
-  fun whileExp (testExp, bodyExp) =
+  fun whileExp (testExp, bodyExp, breakLabel) =
     let
       val testLabel = Temp.newLabel ()
       val bodyLabel = Temp.newLabel ()
-      val doneLabel = Temp.newLabel ()
       val test = unCx testExp
       val body = unNx bodyExp
     in
       Nx (seq [T.LABEL testLabel,
-               test (bodyLabel, doneLabel),
+               test (bodyLabel, breakLabel),
                T.LABEL bodyLabel,
                body,
                T.JUMP (T.NAME testLabel, [testLabel]),
-               T.LABEL doneLabel])
+               T.LABEL breakLabel])
     end
 
-  fun forExp (varExp, initExp, limitExp, bodyExp) =
+  fun forExp (varExp, initExp, limitExp, bodyExp, breakLabel) =
     let
       val var = unEx varExp
       val init = unEx initExp
@@ -186,18 +190,71 @@ struct
       val body = unNx bodyExp
       val bodyLabel = Temp.newLabel ()
       val incrLabel = Temp.newLabel ()
-      val doneLabel = Temp.newLabel ()
     in
       Nx (seq [T.MOVE (var, init),
-               T.CJUMP (T.LE, var, limit, bodyLabel, doneLabel),
+               T.CJUMP (T.LE, var, limit, bodyLabel, breakLabel),
                T.LABEL bodyLabel,
                body,
-               T.CJUMP (T.LT, var, limit, incrLabel, doneLabel),
+               T.CJUMP (T.LT, var, limit, incrLabel, breakLabel),
                T.LABEL incrLabel,
                T.MOVE (var, T.BINOP (T.PLUS, var, T.CONST 1)),
                T.JUMP (T.NAME bodyLabel, [bodyLabel]),
-               T.LABEL doneLabel])
+               T.LABEL breakLabel])
     end
+
+  val newBreakpoint = Temp.newLabel
+
+  fun break (breakLabel) = Nx (T.JUMP (T.NAME breakLabel, [breakLabel]))
+
+  fun negate exp =
+      Cx (fn (t, f) =>
+           T.CJUMP (T.EQ, T.CONST 0, exp, t, f))
+
+  datatype oper = RELOP of T.relop
+                | BINOP of T.binop
+
+  fun trStrOp A.EqOp lExp rExp =
+      Ex (T.CALL (T.NAME (Temp.namedLabel "stringEqual"), [lExp, rExp]))
+    | trStrOp A.NeqOp lExp rExp =
+      negate (unEx (trStrOp A.EqOp lExp rExp))
+    | trStrOp A.LtOp lExp rExp =
+      Ex (T.CALL (T.NAME (Temp.namedLabel "stringLessthan"), [lExp, rExp]))
+    | trStrOp A.GtOp lExp rExp =
+      negate (unEx (trStrOp A.LeOp lExp rExp))
+    | trStrOp A.LeOp lExp rExp =
+      Ex (T.CALL (T.NAME (Temp.namedLabel "stringLessthanOrEqual"), [lExp, rExp]))
+    | trStrOp A.GeOp lExp rExp =
+      negate (unEx (trStrOp A.LtOp lExp rExp))
+    | trStrOp _ _ _ = ErrorMsg.impossible "Attempting non-comparison on strings"
+
+  fun trIntOp A.PlusOp = BINOP T.PLUS
+    | trIntOp A.MinusOp = BINOP T.MINUS
+    | trIntOp A.TimesOp = BINOP T.MUL
+    | trIntOp A.DivideOp = BINOP T.DIV
+    | trIntOp A.EqOp = RELOP T.EQ
+    | trIntOp A.NeqOp = RELOP T.NE
+    | trIntOp A.LtOp = RELOP T.LT
+    | trIntOp A.LeOp = RELOP T.LE
+    | trIntOp A.GtOp = RELOP T.GT
+    | trIntOp A.GeOp = RELOP T.GE
+
+  fun trPtrOp A.EqOp = T.EQ
+    | trPtrOp A.NeqOp = T.NE
+    | trPtrOp _ = ErrorMsg.impossible "Attempting non-equality test on pointers"
+
+  fun binop (ty, leftExp, oper, rightExp) =
+      let
+        val leftExp = unEx leftExp
+        val rightExp = unEx rightExp
+      in
+        case ty of
+            Types.STRING => trStrOp oper leftExp rightExp
+          | Types.INT =>
+            (case trIntOp oper of
+              BINOP b => Ex (T.BINOP (b, leftExp, rightExp))
+            | RELOP p => Cx (fn (t, f) => T.CJUMP (p, leftExp, rightExp, t, f)))
+          | _ => Cx (fn (t, f) => T.CJUMP (trPtrOp oper, leftExp, rightExp, t, f))
+      end
 
     (* TODO: REMOVE ME! *)
     fun debug exp = Printtree.printtree (TextIO.stdOut, unNx exp)

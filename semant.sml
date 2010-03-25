@@ -127,7 +127,7 @@ and transFunDec (venv, tenv, {name, params, result, body, pos}) =
       val venv' = foldr Symbol.enter' venv (ListPair.mapEq bind
                                                            (params,
                                                             (Translate.formals level)))
-      val {exp=_, ty=actual} = transExp (venv', tenv, level, false, body)
+      val {exp=_, ty=actual} = transExp (venv', tenv, level, NONE, body)
     in
       case result of
         NONE => expect actual T.UNIT
@@ -176,10 +176,10 @@ and transDec (venv, tenv, level, _, A.FunctionDec fundecs) = (* functions *)
       map (fn fundec => transFunDec (venv', tenv, fundec)) fundecs;
       ({venv=venv', tenv=tenv}, [])
     end
-  | transDec (venv, tenv, level, loop, A.VarDec {name, escape, typ, init, pos}) = (* var *)
+  | transDec (venv, tenv, level, bp, A.VarDec {name, escape, typ, init, pos}) = (* var *)
     let
       val access = Translate.allocLocal level (!escape)
-      val {exp=rExp, ty=actual} = transExp (venv, tenv, level, loop, init)
+      val {exp=rExp, ty=actual} = transExp (venv, tenv, level, bp, init)
       val declared = case typ of
                        SOME (name, pos) => resolveTyName (tenv, name, pos)
                      | NONE => actual
@@ -206,12 +206,13 @@ and transDec (venv, tenv, level, _, A.FunctionDec fundecs) = (* functions *)
       ({venv=venv, tenv=tenv'}, [])
     end
 
-and transExp (venv, tenv, level, loop, exp) =
+and transExp (venv, tenv, level, bp, exp) =
     let
-      fun getTy exp = #ty (transExp (venv, tenv, level, loop, exp))
+      fun transExp' exp = transExp (venv, tenv, level, bp, exp)
+      fun getTy exp = #ty (transExp (venv, tenv, level, bp, exp))
 
       and transIdxExp exp =
-          let val {exp=idxExp, ty=actual} = transExp (venv, tenv, level, loop, exp) in
+          let val {exp=idxExp, ty=actual} = transExp (venv, tenv, level, bp, exp) in
             expect actual T.INT
                    (E.NonIntSubscript {pos=A.getPosExp exp, actual=actual});
             idxExp
@@ -282,19 +283,20 @@ and transExp (venv, tenv, level, loop, exp) =
               | operTy (ty, A.NeqOp) = ty
               | operTy (ty, A.EqOp) = ty
               | operTy _ = T.INT
-            val left_ty = getTy left
+            val {exp=lExp, ty=left_ty} = transExp' left
+            val {exp=rExp, ty=right_ty} = transExp' right
             val expected = operTy (left_ty, oper)
             val left_join = T.join (left_ty, expected)
-            val right_ty = getTy right
             val actual = T.join (if T.wellTyped left_join then left_join else expected, right_ty)
           in
             if T.wellTyped left_ty andalso not (T.wellTyped left_join) then
-              error (E.OperandMismatch {pos=(A.getPosExp left), oper=oper, actual=left_ty, expected=expected})
+              (error (E.OperandMismatch {pos=(A.getPosExp left), oper=oper, actual=left_ty, expected=expected});
+               {exp=Tr.BOGUS, ty=T.INT})
             else if T.wellTyped left_join andalso T.wellTyped right_ty andalso not (T.wellTyped actual) then
-              error (E.OperandMismatch {pos=(A.getPosExp right), oper=oper, actual=right_ty, expected=left_join})
+              (error (E.OperandMismatch {pos=(A.getPosExp right), oper=oper, actual=right_ty, expected=left_join});
+               {exp=Tr.BOGUS, ty=T.INT})
             else
-              ();
-            {exp=Tr.BOGUS, ty=T.INT}
+              {exp=Tr.binop (actual, lExp, oper, rExp), ty=T.INT}
           end
 
       and transRecord {fields=field_exps, typ, pos} =
@@ -318,15 +320,19 @@ and transExp (venv, tenv, level, loop, exp) =
                       {exp=Tr.BOGUS, ty=T.TOP}))
 
       and transSeq exps =
-          foldl (fn ((exp, _), _) =>
-                    transExp (venv, tenv, level, loop, exp))
+          foldl (fn ((exp, _), {exp=trexp, ty=_}) =>
+                  let
+                    val {exp=newExp, ty} = transExp (venv, tenv, level, bp, exp)
+                  in
+                    {exp=Tr.sequence [trexp, newExp], ty=ty}
+                  end)
                 {exp=Tr.BOGUS, ty=T.UNIT}
                 exps
 
       and transAssign {var, exp, pos} =
           let
             val {exp=lExp, ty=expected} = transVar var
-            val {exp=rExp, ty=actual} = transExp (venv, tenv, level, loop, exp)
+            val {exp=rExp, ty=actual} = transExp (venv, tenv, level, bp, exp)
           in
             (expect actual expected
                     (E.AssignmentMismatch {pos=pos, actual=actual, expected=expected});
@@ -335,8 +341,8 @@ and transExp (venv, tenv, level, loop, exp) =
 
       and transIf {test, then', else', pos} =
           let
-            val {exp=_, ty=test_ty} = transExp (venv, tenv, level, loop, test)
-            val {exp=_, ty=then_ty} = transExp (venv, tenv, level, loop, then')
+            val {exp=_, ty=test_ty} = transExp (venv, tenv, level, bp, test)
+            val {exp=_, ty=then_ty} = transExp (venv, tenv, level, bp, then')
             val else_ty = case else' of
                             NONE => T.UNIT
                           | SOME exp => getTy exp
@@ -357,23 +363,25 @@ and transExp (venv, tenv, level, loop, exp) =
 
       and transWhile {test, body, pos} =
           let
-            val {exp=testExp, ty=test_ty} = transExp (venv, tenv, level, loop, test)
-            val {exp=bodyExp, ty=body_ty} = transExp (venv, tenv, level, true, body)
+            val breakpoint = Tr.newBreakpoint ()
+            val {exp=testExp, ty=test_ty} = transExp (venv, tenv, level, bp, test)
+            val {exp=bodyExp, ty=body_ty} = transExp (venv, tenv, level, SOME breakpoint, body)
           in
             expect test_ty T.INT
                    (E.ConditionMismatch {pos=(A.getPosExp test), actual=test_ty});
             expect body_ty T.UNIT
                    (E.NonUnitWhile {pos=(A.getPosExp body), actual=body_ty});
-            {exp=Tr.whileExp (testExp, bodyExp), ty=Types.UNIT}
+            {exp=Tr.whileExp (testExp, bodyExp, breakpoint), ty=Types.UNIT}
           end
 
       and transFor {var, escape, lo, hi, body, pos} =
           let
-            val access = Translate.allocLocal level (!escape)
-            val {exp=loExp, ty=lo_ty} = transExp (venv, tenv, level, loop, lo)
-            val {exp=hiExp, ty=hi_ty} = transExp (venv, tenv, level, loop, hi)
+            val access = Tr.allocLocal level (!escape)
+            val breakpoint = Tr.newBreakpoint ()
+            val {exp=loExp, ty=lo_ty} = transExp (venv, tenv, level, bp, lo)
+            val {exp=hiExp, ty=hi_ty} = transExp (venv, tenv, level, bp, hi)
             val venv' = Symbol.enter (venv, var, Env.VarEntry {access=access, ty=Types.INT})
-            val {exp=bodyExp, ty=body_ty} = transExp (venv', tenv, level, true, body)
+            val {exp=bodyExp, ty=body_ty} = transExp (venv', tenv, level, SOME breakpoint, body)
           in
             expect lo_ty Types.INT
                    (E.ForRangeMismatch {pos=(A.getPosExp lo), which="lower", actual=lo_ty});
@@ -381,7 +389,7 @@ and transExp (venv, tenv, level, loop, exp) =
                    (E.ForRangeMismatch {pos=(A.getPosExp hi), which="upper", actual=hi_ty});
             expect body_ty Types.UNIT
                    (E.NonUnitFor {pos=pos, actual=body_ty});
-            {exp=Tr.forExp (Tr.simpleVar (access, level), loExp, hiExp, bodyExp), ty=T.UNIT}
+            {exp=Tr.forExp (Tr.simpleVar (access, level), loExp, hiExp, bodyExp, breakpoint), ty=T.UNIT}
           end
 
       and transLet {decs, body, pos} =
@@ -389,13 +397,13 @@ and transExp (venv, tenv, level, loop, exp) =
             val ({venv=venv', tenv=tenv'}, decExps) =
               foldl (fn (dec, ({venv, tenv}, decExps)) =>
                       let
-                        val (envs, decExps') = transDec (venv, tenv, level, loop, dec)
+                        val (envs, decExps') = transDec (venv, tenv, level, bp, dec)
                       in
                         (envs, (decExps @ decExps'))
                       end)
                     ({venv=venv, tenv=tenv}, [])
                     decs
-            val {exp=bodyExp, ty=ty} = transExp (venv', tenv', level, loop, body)
+            val {exp=bodyExp, ty=ty} = transExp (venv', tenv', level, bp, body)
           in
             {exp=Tr.sequence (decExps @ [bodyExp]), ty=ty}
           end
@@ -403,7 +411,7 @@ and transExp (venv, tenv, level, loop, exp) =
       and transArray {typ, dims, init, pos} =
           let
             val indices = length dims
-            val {exp=_, ty=init_ty} = transExp (venv, tenv, level, loop, init)
+            val {exp=_, ty=init_ty} = transExp (venv, tenv, level, bp, init)
           in
             case resolveTyName (tenv, typ, pos) of
               array_ty as T.ARRAY (element_ty, dim, _) =>
@@ -435,14 +443,15 @@ and transExp (venv, tenv, level, loop, exp) =
       | A.LetExp let' => transLet let'
       | A.ArrayExp array => transArray array
       | A.BreakExp pos =>
-        (errorIf (not loop) (E.IllegalBreak {pos=pos});
-         {exp=Tr.BOGUS, ty=Types.BOTTOM})
+          case bp of
+               NONE => (error (E.IllegalBreak {pos=pos}); {exp=Tr.BOGUS, ty=T.BOTTOM})
+             | SOME breakpoint => {exp=Tr.break breakpoint, ty=T.BOTTOM}
     end
 
 fun transProg exp = transExp (Env.base_venv,
                               Env.base_tenv,
                               Translate.newLevel {name=Temp.newLabel (), parent=Translate.outermost, formals=[]},
-                              false,
+                              NONE,
                               exp)
 
 end
