@@ -302,17 +302,21 @@ and transExp (venv, tenv, level, bp, exp) =
       and transRecord {fields=field_exps, typ, pos} =
           (case Symbol.look (tenv, typ) of
              SOME (record as Types.RECORD (fields, _)) =>
-             let fun checkField (field, expected) =
+             let fun trField (field, expected) =
                      case findFieldEntries (field_exps, field) of
                        [(_, exp, pos)] =>
-                       let val actual = getTy exp in
+                       let val {exp, ty=actual} = transExp' exp in
                          expect actual expected
-                                (E.FieldMismatch {pos=pos, field=field, actual=actual, expected=expected})
+                                (E.FieldMismatch {pos=pos, field=field, actual=actual, expected=expected});
+                         exp
                        end
-                     | _ :: _ => error (E.DuplicateField {pos=pos, field=field})
-                     | [] => error (E.MissingField {pos=pos, field=field, expected=expected})
+                     | _ :: _ => (error (E.DuplicateField {pos=pos, field=field});
+                                  Tr.BOGUS)
+                     | [] => (error (E.MissingField {pos=pos, field=field, expected=expected});
+                              Tr.BOGUS)
+               val fieldTrExps = map trField fields
              in
-               ((map checkField fields); {exp=Tr.BOGUS, ty=record})
+               {exp=Tr.recordExp fieldTrExps, ty=record}
              end
            | SOME actual => (error (E.NonRecordType {pos=pos, sym=typ, actual=actual});
                              {exp=Tr.BOGUS, ty=T.TOP})
@@ -341,11 +345,12 @@ and transExp (venv, tenv, level, bp, exp) =
 
       and transIf {test, then', else', pos} =
           let
-            val {exp=_, ty=test_ty} = transExp (venv, tenv, level, bp, test)
-            val {exp=_, ty=then_ty} = transExp (venv, tenv, level, bp, then')
-            val else_ty = case else' of
-                            NONE => T.UNIT
-                          | SOME exp => getTy exp
+            val {exp=testExp, ty=test_ty} = transExp (venv, tenv, level, bp, test)
+            val {exp=thenExp, ty=then_ty} = transExp (venv, tenv, level, bp, then')
+            val {exp=elseExp, ty=else_ty} =
+              case else' of
+                   NONE => {exp=Tr.UNIT, ty=T.UNIT}
+                 | SOME exp => transExp' exp
             val actual = case else' of
                            NONE => T.UNIT
                          | SOME _ => T.join (then_ty, else_ty)
@@ -358,7 +363,7 @@ and transExp (venv, tenv, level, bp, exp) =
             | SOME exp => errorIf (T.wellTyped then_ty andalso T.wellTyped else_ty andalso
                                    not (T.wellTyped actual))
                                   (E.IfBranchMismatch {pos=(A.getPosExp exp), then'=then_ty, else'=else_ty});
-            {exp=Tr.BOGUS, ty=actual}
+            {exp=Tr.ifExp (testExp, thenExp, elseExp), ty=actual}
           end
 
       and transWhile {test, body, pos} =
@@ -411,26 +416,35 @@ and transExp (venv, tenv, level, bp, exp) =
       and transArray {typ, dims, init, pos} =
           let
             val indices = length dims
-            val {exp=_, ty=init_ty} = transExp (venv, tenv, level, bp, init)
+            val {exp=initExp, ty=init_ty} = transExp (venv, tenv, level, bp, init)
+            fun transDim dim =
+                let
+                  val {exp=dimExp, ty=dimType} = transExp' dim
+                in
+                  (expect dimType T.INT
+                    (E.ArraySizeMismatch {pos=A.getPosExp dim, actual=dimType});
+                   dimExp)
+                end
+            val dimExps = map transDim dims
           in
             case resolveTyName (tenv, typ, pos) of
               array_ty as T.ARRAY (element_ty, dim, _) =>
               (errorIf (indices <> dim)
                        (E.DimensionMismatch{pos=pos, ty=array_ty, expected=dim, actual=indices});
-              (expect init_ty element_ty
+               expect init_ty element_ty
                       (E.ArrayInitMismatch {pos=(A.getPosExp init),
                                             actual=init_ty,
                                             expected=element_ty});
-               {exp=Tr.BOGUS, ty=array_ty}))
+               {exp=Tr.arrayExp (dimExps, initExp), ty=array_ty})
             | actual => (errorIf (T.wellTyped actual)
                                  (E.NonArrayType {pos=pos, sym=typ, actual=actual});
                          {exp=Tr.BOGUS, ty=T.TOP})
           end
     in
       case exp of
-        A.NilExp _ => {exp=Tr.BOGUS, ty=T.NIL}
-      | A.IntExp _ => {exp=Tr.BOGUS, ty=T.INT}
-      | A.StringExp _ => {exp=Tr.BOGUS, ty=T.STRING}
+        A.NilExp _ => {exp=Tr.NIL, ty=T.NIL}
+      | A.IntExp (n, _) => {exp=Tr.intLit n, ty=T.INT}
+      | A.StringExp (lit, _) => {exp=Tr.stringLit lit, ty=T.STRING}
       | A.VarExp var => transVar var
       | A.CallExp call => transCall call
       | A.OpExp op' => transOp op'

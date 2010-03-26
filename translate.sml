@@ -6,6 +6,8 @@ sig
   type breakpoint
 
   val BOGUS : exp
+  val UNIT : exp
+  val NIL : exp
 
   val outermost : level
   val newLevel : {parent: level, name: Temp.label, formals: bool list} -> level
@@ -23,6 +25,18 @@ sig
   val newBreakpoint : unit -> breakpoint
   val break : breakpoint -> exp
   val binop : Types.ty * exp * Absyn.oper * exp -> exp
+  val ifExp : exp * exp * exp -> exp
+
+  val recordExp : exp list -> exp
+  val arrayExp : exp list * exp -> exp
+
+  val intLit : int -> exp
+  val stringLit : string -> exp
+
+  val procEntryExit : {level: level, body: exp} -> unit
+
+  structure Frame : FRAME
+  val result : unit -> Frame.frag list
 
   val debug : exp -> unit
   val temp : unit -> exp
@@ -30,6 +44,7 @@ end
 
 structure Translate :> TRANSLATE =
 struct
+  structure Frame = MipsFrame
   structure T = Tree and A = Absyn
   datatype exp = Ex of T.exp
                | Nx of T.stm
@@ -37,8 +52,10 @@ struct
 
   fun temp () = Ex (T.TEMP (Temp.newTemp ()))
 
+  val frags = ref [] : Frame.frag list ref
   val BOGUS = Ex (T.CONST 0)
-  val NOOP = T.EXP (T.CONST 0)
+  val UNIT = Nx (T.EXP (T.CONST 0))
+  val NIL = Ex (T.CONST 0)
 
   datatype level = Top | Nested of {parent: level, frame: Frame.frame, id: unit ref}
   type access = level * Frame.access
@@ -149,7 +166,7 @@ struct
                                       unEx varExp,
                                       T.CONST (dim * Frame.wordSize))
       val (_, offsetExp, _, code) = foldr genIdxCode
-                                          (T.CONST 1, T.CONST 0, startAddrTmp, NOOP)
+                                          (T.CONST 1, T.CONST 0, startAddrTmp, unNx UNIT)
                                           exps
     in
       Ex (T.ESEQ (T.MOVE (startAddrTmp, startSizeAddrExp),
@@ -255,6 +272,97 @@ struct
             | RELOP p => Cx (fn (t, f) => T.CJUMP (p, leftExp, rightExp, t, f)))
           | _ => Cx (fn (t, f) => T.CJUMP (trPtrOp oper, leftExp, rightExp, t, f))
       end
+
+  (* TODO: Special Cases *)
+  fun ifExp (testExp, thenExp, elseExp) =
+      let
+        val r = Temp.newTemp ()
+        val thenLabel = Temp.newLabel ()
+        val elseLabel = Temp.newLabel ()
+        val joinLabel = Temp.newLabel ()
+      in
+        case thenExp of
+             Ex _ =>
+               Ex (T.ESEQ (seq [(unCx testExp) (thenLabel, elseLabel),
+                                T.LABEL thenLabel,
+                                T.MOVE (T.TEMP r, unEx thenExp),
+                                T.JUMP (T.NAME joinLabel, [joinLabel]),
+                                T.LABEL elseLabel,
+                                T.MOVE (T.TEMP r, unEx elseExp),
+                                T.LABEL joinLabel],
+                           T.TEMP r))
+           | Nx _ =>
+               Nx (seq [(unCx testExp) (thenLabel, elseLabel),
+                        T.LABEL thenLabel,
+                        unNx thenExp,
+                        T.JUMP (T.NAME joinLabel, [joinLabel]),
+                        T.LABEL elseLabel,
+                        unNx elseExp,
+                        T.LABEL joinLabel])
+           | Cx _ =>
+               Cx (fn labels =>
+                    seq [(unCx testExp) (thenLabel, elseLabel),
+                         T.LABEL thenLabel,
+                         (unCx thenExp) labels,
+                         T.LABEL elseLabel,
+                         (unCx elseExp) labels])
+      end
+
+  fun recordExp exps =
+    let
+      val numFields = length exps
+      val r = T.TEMP (Temp.newTemp ())
+      val alloc = T.MOVE (r, T.CALL (T.NAME (Temp.namedLabel "malloc"),
+                                     [T.CONST (Frame.wordSize * numFields)]))
+      val (fieldInits, _) = foldl (fn (exp, (inits, i)) =>
+                               (T.SEQ (inits,
+                                       T.MOVE (unEx (fieldVar (Ex r, i)), unEx exp)),
+                                i + 1))
+                             (alloc, 0)
+                             exps
+    in
+      Ex (T.ESEQ (fieldInits, r))
+    end
+
+  fun arrayExp (dimExps, initExp) =
+      let
+        val dims = map unEx dimExps
+        val dimTemps = map (fn _ => T.TEMP (Temp.newTemp ())) dims
+        val productRegistersStm = seq (ListPair.mapEq
+                                        (fn (exp, temp) => T.MOVE (temp, exp))
+                                        (dims, dimTemps))
+        val sizeExp = foldl (fn (exp, sizeExp) => T.BINOP (T.MUL, exp, sizeExp))
+                            (hd dimTemps)
+                            (tl dimTemps)
+        val resultTemp = T.TEMP (Temp.newTemp ())
+        fun ihatedrew (temp, i) =
+            T.MOVE (T.MEM (T.BINOP (T.PLUS, resultTemp, T.CONST (Frame.wordSize * i))), temp)
+        val (loadSizesStm, _) = foldl (fn (temp, (stm, i)) =>
+                                        (T.SEQ (stm, ihatedrew (temp, i)), i + 1))
+                                      (ihatedrew (hd dimTemps, 0), 1)
+                                      (tl dimTemps)
+      in
+        Ex (T.ESEQ (seq [productRegistersStm,
+                         T.MOVE (resultTemp,
+                                 T.CALL (T.NAME (Temp.namedLabel "initArray"),
+                                         [unEx initExp, sizeExp, T.CONST (length dims)])),
+                         loadSizesStm],
+                    resultTemp))
+      end
+
+  fun intLit n = Ex (T.CONST n)
+
+  fun stringLit lit =
+    let val lab = Temp.newLabel () in
+      frags := Frame.STRING (lab, lit) :: (!frags);
+      Ex (T.NAME lab)
+    end
+
+
+  fun procEntryExit _ = ()
+
+
+  fun result () = !frags
 
     (* TODO: REMOVE ME! *)
     fun debug exp = Printtree.printtree (TextIO.stdOut, unNx exp)

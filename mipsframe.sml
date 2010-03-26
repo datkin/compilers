@@ -11,6 +11,9 @@ struct
   type frame = {formals: access list, localCount: int ref,
                 name: Temp.label, frameOffset: int ref}
 
+  datatype frag = PROC of {body: Tree.stm, frame: frame}
+                | STRING of Temp.label * string
+
   fun escapeToAccess (true, (access, frameOffset, registerArgs)) =
       (InFrame (frameOffset + offset) :: access, frameOffset + offset, registerArgs)
     | escapeToAccess (false, (access, frameOffset, registerArgs)) =
@@ -51,5 +54,3 @@ struct
     | exp (InReg temp) _         = T.TEMP temp
 
 end
-
-structure Frame : FRAME = MipsFrame
