@@ -71,17 +71,17 @@ fun test {name, source,
     let
       val _ = (print ("Running test " ^ name ^ "...\n"); ErrorMsg.reset name)
       val actual_ast = Parse.parse (name, source)
-      val passed = List.all (fn x => x)
-                            [(checkAst (ast, actual_ast)),
-                             (checkErrors parse_errors)]
+      val passed = checkAst (ast, actual_ast) andalso (checkErrors parse_errors)
+      val continue = case parse_errors of
+                       SOME e => (length e = 0)
+                     | NONE => true
       (* Semant processing is delayed until after calling checkErrors on the
        * parse phase b/c checkErrors clears the error log and that would prevent
        * us from testing type errors. *)
-      val {exp=_, ty=actual_type} = Semant.transProg actual_ast
-      val passed = List.all (fn x => x)
-                            [passed,
-                             (checkType (ty, actual_type)),
-                             (checkErrors check_errors)]
+      (* val {exp=_, ty=actual_type} = Semant.transProg actual_ast *)
+      val passed = passed andalso continue andalso
+                   (checkType (ty, #ty (Semant.transProg actual_ast))) andalso
+                   (checkErrors check_errors)
     in
       (print "\n"; passed)
     end

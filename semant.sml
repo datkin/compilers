@@ -1,5 +1,5 @@
 structure Semant : sig
-  val transProg : Absyn.exp -> {exp: Translate.exp, ty: Types.ty}
+  val transProg : Absyn.exp -> {frags: Translate.Frame.frag list, ty: Types.ty}
 end =
 struct
 
@@ -127,7 +127,7 @@ and transFunDec (venv, tenv, {name, params, result, body, pos}) =
       val venv' = foldr Symbol.enter' venv (ListPair.mapEq bind
                                                            (params,
                                                             (Translate.formals level)))
-      val {exp=_, ty=actual} = transExp (venv', tenv, level, NONE, body)
+      val {exp=bodyExp, ty=actual} = transExp (venv', tenv, level, NONE, body)
     in
       case result of
         NONE => expect actual T.UNIT
@@ -136,7 +136,7 @@ and transFunDec (venv, tenv, {name, params, result, body, pos}) =
                              expect actual expected
                                     (E.TypeMismatch {pos=pos, actual=actual, expected=expected})
                            end;
-      {exp=Tr.BOGUS, ty=Types.UNIT}
+      Translate.procEntryExit {level=level, body=bodyExp}
     end
 
 and transDec (venv, tenv, level, _, A.FunctionDec fundecs) = (* functions *)
@@ -259,22 +259,30 @@ and transExp (venv, tenv, level, bp, exp) =
           end
 
       and transCall {func=name, args=arg_exps, pos} =
-          (case Symbol.look (venv, name) of
-             NONE => (error (E.UndefinedFunction {pos=pos, sym=name});
-                      {exp=Tr.BOGUS, ty=T.TOP})
-           | SOME (Env.VarEntry _) => (error (E.NameBoundToVar {pos=pos, sym=name});
-                                       {exp=Tr.BOGUS, ty=T.TOP})
-           | SOME (Env.FunEntry {label, level, formals, result}) =>
-             (* Verify the arg types against the declared types. *)
-             (ListPair.appEq (fn (expected, exp) =>
-                                 let val actual = getTy exp in
-                                   expect actual expected
-                                          (E.ArgumentMismatch {pos=(A.getPosExp exp), actual=actual, expected=expected})
-                                 end)
-                             (formals, arg_exps)
-              handle ListPair.UnequalLengths =>
-                     error (E.ArityMismatch {pos=pos, name=name, actual=length arg_exps, expected=length formals});
-              {exp=Tr.BOGUS, ty=result}))
+          case Symbol.look (venv, name) of
+            NONE => (error (E.UndefinedFunction {pos=pos, sym=name});
+                     {exp=Tr.BOGUS, ty=T.TOP})
+          | SOME (Env.VarEntry _) => (error (E.NameBoundToVar {pos=pos, sym=name});
+                                      {exp=Tr.BOGUS, ty=T.TOP})
+          | SOME (Env.FunEntry {label, level=funLevel, formals, result}) =>
+            (* Verify the arg types against the declared types. *)
+            let
+             fun trArg (expected, exp) =
+                 let val {exp=trExp, ty=actual} = transExp' exp in
+                   expect actual expected
+                         (E.ArgumentMismatch {pos=(A.getPosExp exp), actual=actual, expected=expected});
+                   trExp
+                 end
+              val args = ListPair.mapEq trArg (formals, arg_exps)
+                         handle ListPair.UnequalLengths =>
+                          (error (E.ArityMismatch {pos=pos,
+                                                   name=name,
+                                                   actual=length arg_exps,
+                                                   expected=length formals});
+                            [])
+            in
+               {exp=Tr.callExp (label, args, level, funLevel), ty=result}
+            end
 
       and transOp {left, oper, right, pos} =
           let
@@ -324,14 +332,19 @@ and transExp (venv, tenv, level, bp, exp) =
                       {exp=Tr.BOGUS, ty=T.TOP}))
 
       and transSeq exps =
-          foldl (fn ((exp, _), {exp=trexp, ty=_}) =>
-                  let
-                    val {exp=newExp, ty} = transExp (venv, tenv, level, bp, exp)
-                  in
-                    {exp=Tr.sequence [trexp, newExp], ty=ty}
-                  end)
-                {exp=Tr.BOGUS, ty=T.UNIT}
-                exps
+        let
+          val (trExps, ty) =
+            foldl (fn ((exp, _), (trExps, _)) =>
+                    let
+                      val {exp=newExp, ty} = transExp (venv, tenv, level, bp, exp)
+                    in
+                      (trExps @ [newExp], ty)
+                    end)
+                  ([], T.UNIT)
+                  exps
+        in
+          {exp=Tr.sequence trExps, ty=ty}
+        end
 
       and transAssign {var, exp, pos} =
           let
@@ -462,10 +475,16 @@ and transExp (venv, tenv, level, bp, exp) =
              | SOME breakpoint => {exp=Tr.break breakpoint, ty=T.BOTTOM}
     end
 
-fun transProg exp = transExp (Env.base_venv,
+fun transProg exp =
+  let
+    val mainLevel = Translate.newLevel {name=Temp.newLabel (), parent=Translate.outermost, formals=[]}
+    val {exp, ty} = transExp (Env.base_venv,
                               Env.base_tenv,
-                              Translate.newLevel {name=Temp.newLabel (), parent=Translate.outermost, formals=[]},
+                              mainLevel,
                               NONE,
                               exp)
-
+  in
+    Tr.procEntryExit {level=mainLevel, body=exp};
+    {frags=Tr.result (), ty=ty}
+  end
 end

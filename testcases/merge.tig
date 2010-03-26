@@ -46,8 +46,8 @@ function readint(any: any) : int =
    if l=nil then print("\n")
    else (printint(l.first); print(" "); printlist(l.rest))
 
-   var list1 := readlist()
-   var list2 := (buffer:=getchar(); readlist())
+ var list1 := readlist()
+ var list2 := (buffer:=getchar(); readlist())
 
 
   /* BODY OF MAIN PROGRAM */

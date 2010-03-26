@@ -3,6 +3,7 @@ struct
 
 fun compile (name, source) =
     (ErrorMsg.reset name;
+     Translate.reset ();
      let
        val ast = Parse.parse (name, source)
        val _ = FindEscape.findEscape ast
