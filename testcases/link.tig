@@ -1,0 +1,13 @@
+let
+  function foo(x:int) : int =
+    let
+      function bar() : int =
+        baz() + 5
+      function baz() : int =
+        x + 6
+    in
+      bar()
+    end
+in
+  foo(1)
+end

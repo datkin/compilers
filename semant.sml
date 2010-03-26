@@ -237,7 +237,7 @@ and transExp (venv, tenv, level, bp, exp) =
                                                            (NONE, i + 1)
              in
                case foldl findAndCount (NONE, 0) fields of
-                    (SOME ty, i) => {exp=Tr.fieldVar (varExp, i), ty=ty}
+                    (SOME ty, i) => {exp=Tr.fieldVar (varExp, i, false), ty=ty}
                   | (NONE, _) => (error (E.NoSuchField {pos=pos, field=field, record=record});
                                   {exp=Tr.BOGUS, ty=T.TOP})
              end
@@ -483,8 +483,9 @@ fun transProg exp =
                               mainLevel,
                               NONE,
                               exp)
+    val fullBody = Translate.mainSuffix exp
   in
-    Tr.procEntryExit {level=mainLevel, body=exp};
+    Tr.procEntryExit {level=mainLevel, body=fullBody};
     {frags=Tr.result (), ty=ty}
   end
 end

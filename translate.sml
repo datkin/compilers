@@ -16,7 +16,7 @@ sig
   val allocLocal : level -> bool -> access
 
   val simpleVar : access * level -> exp
-  val fieldVar : exp * int -> exp
+  val fieldVar : exp * int * bool -> exp
   val subscriptVar : exp * exp list * int -> exp
 
   val assign : exp * exp -> exp
@@ -36,6 +36,7 @@ sig
   val stringLit : string -> exp
 
   val procEntryExit : {level: level, body: exp} -> unit
+  val mainSuffix : exp -> exp
 
   val result : unit -> Frame.frag list
   val reset : unit -> unit
@@ -53,10 +54,11 @@ struct
   type access = level * Frame.access
   type breakpoint = Temp.label
 
-  val BOGUS = Ex (T.CONST 555)
-  val UNIT = Nx (T.EXP (T.CONST 666))
-  val NIL = Ex (T.CONST 777)
+  val BOGUS = Ex (T.CONST 0)
+  val UNIT = Nx (T.EXP (T.CONST 0))
+  val NIL = Ex (T.CONST 0)
 
+  val ERROR = Temp.newLabel ()
   val frags = ref [] : Frame.frag list ref
   val outermost = Top
 
@@ -74,13 +76,13 @@ struct
   fun allocLocal (level as Nested {parent, frame, id}) escapes = (level, Frame.allocLocal frame escapes)
     | allocLocal Top _ = ErrorMsg.impossible "Attempted to allocate in the outermost frame."
 
-  fun seq [] = T.EXP (T.CONST 222)
+  fun seq [] = T.EXP (T.CONST 0)
     | seq [stm1] = stm1
     | seq (stm :: stms) = T.SEQ (stm, seq stms)
 
   fun unEx (Ex e) = e
     | unEx (Nx (T.EXP e)) = e
-    | unEx (Nx s) = T.ESEQ (s, T.CONST 888)
+    | unEx (Nx s) = T.ESEQ (s, T.CONST 0)
     | unEx (Cx genstm) =
         let val r = Temp.newTemp ()
             val t = Temp.newLabel ()
@@ -100,13 +102,7 @@ struct
 
   fun unCx (Ex (T.CONST 0)) = (fn (l1, l2) => T.JUMP (T.NAME l2, [l2]))
     | unCx (Ex (T.CONST 1)) = (fn (l1, l2) => T.JUMP (T.NAME l1, [l1]))
-    | unCx (Ex e) = (fn (l1, l2) =>
-                        let
-                          val r = Temp.newTemp ()
-                        in
-                          seq [T.MOVE (T.TEMP r, e),
-                               T.CJUMP (T.EQ, T.CONST 1, T.TEMP r, l1, l2)]
-                        end)
+    | unCx (Ex e) = (fn (l1, l2) => T.CJUMP (T.EQ, T.CONST 1, e, l1, l2))
     | unCx (Nx n) = ErrorMsg.impossible "Tried to unCx an Nx"
     | unCx (Cx c) = c
 
@@ -127,9 +123,23 @@ struct
   fun simpleVar ((target, faccess), current) =
       Ex (Frame.exp faccess (getFPExp (target, current, T.TEMP Frame.FP)))
 
-  (* TODO: Null checks *)
-  fun fieldVar (varExp, offset) =
+  (* The last argument indicates whether it is safe or not to dereference the
+   * record pointer. If it's not safe, we do a null check first. It's only safe
+   * when doing record initialization immediately after record allocation
+   * (though this isn't entirely true b/c allocation could fail as well). *)
+  fun fieldVar (varExp, offset, true) =
       Ex (T.MEM (T.BINOP (T.PLUS, unEx varExp, T.CONST (offset * Frame.wordSize))))
+    | fieldVar (varExp, offset, false) =
+      let
+        val varTemp = Temp.newTemp ()
+        val safeLabel = Temp.newLabel ()
+        val var = unEx varExp
+      in
+        Ex (T.ESEQ (seq [T.MOVE (T.TEMP varTemp, var),
+                         T.CJUMP (T.NE, unEx NIL, T.TEMP varTemp, safeLabel,ERROR),
+                         T.LABEL safeLabel],
+                    T.MEM (T.BINOP (T.PLUS, unEx varExp, T.CONST (offset * Frame.wordSize)))))
+      end
 
   (* TODO: add bounds checks *)
   fun subscriptVar (varExp, exps, dim) =
@@ -178,7 +188,7 @@ struct
 
   fun assign (lExp, rExp) = Nx (T.MOVE (unEx lExp, unEx rExp))
 
-  fun sequence [] = Ex (T.CONST 999)
+  fun sequence [] = Ex (T.CONST 0)
     | sequence [exp] = exp
     | sequence (exp :: exps) =
         Ex (T.ESEQ (unNx exp, unEx (sequence exps)))
@@ -272,7 +282,6 @@ struct
           | _ => Cx (fn (t, f) => T.CJUMP (trPtrOp oper, leftExp, rightExp, t, f))
       end
 
-  (* TODO: Special Cases *)
   fun ifExp (testExp, thenExp, elseExp) =
       let
         val r = Temp.newTemp ()
@@ -280,8 +289,25 @@ struct
         val elseLabel = Temp.newLabel ()
         val joinLabel = Temp.newLabel ()
       in
-        case thenExp of
-             Ex _ =>
+        case (thenExp, elseExp) of
+             (_, Ex (T.CONST 0)) => (* Special case for & *)
+               Cx (fn (t, f) =>
+                    seq [(unCx testExp) (thenLabel, f),
+                         T.LABEL thenLabel,
+                         (unCx thenExp) (t, f)])
+           | (Ex (T.CONST 1), _) => (* Special case for | *)
+               Cx (fn (t, f) =>
+                    seq [(unCx testExp) (t, elseLabel),
+                         T.LABEL elseLabel,
+                         (unCx elseExp) (t, f)])
+           | (Cx _, _) =>
+               Cx (fn (t, f) =>
+                    seq [(unCx testExp) (thenLabel, elseLabel),
+                         T.LABEL thenLabel,
+                         (unCx thenExp) (t, f),
+                         T.LABEL elseLabel,
+                         (unCx elseExp) (t, f)])
+           | (Ex _, _) =>
                Ex (T.ESEQ (seq [(unCx testExp) (thenLabel, elseLabel),
                                 T.LABEL thenLabel,
                                 T.MOVE (T.TEMP r, unEx thenExp),
@@ -290,7 +316,7 @@ struct
                                 T.MOVE (T.TEMP r, unEx elseExp),
                                 T.LABEL joinLabel],
                            T.TEMP r))
-           | Nx _ =>
+           | (Nx _, _) =>
                Nx (seq [(unCx testExp) (thenLabel, elseLabel),
                         T.LABEL thenLabel,
                         unNx thenExp,
@@ -298,13 +324,6 @@ struct
                         T.LABEL elseLabel,
                         unNx elseExp,
                         T.LABEL joinLabel])
-           | Cx _ =>
-               Cx (fn labels =>
-                    seq [(unCx testExp) (thenLabel, elseLabel),
-                         T.LABEL thenLabel,
-                         (unCx thenExp) labels,
-                         T.LABEL elseLabel,
-                         (unCx elseExp) labels])
       end
 
   fun callExp (label, args, current, Nested {parent=target as Nested _, frame, id}) =
@@ -320,7 +339,7 @@ struct
         val alloc = T.MOVE (r, Frame.externalCall ("malloc", [T.CONST (Frame.wordSize * numFields)]))
         val (fieldInits, _) = foldl (fn (exp, (inits, i)) =>
                                  (T.SEQ (inits,
-                                         T.MOVE (unEx (fieldVar (Ex r, i)), unEx exp)),
+                                         T.MOVE (unEx (fieldVar (Ex r, i, true)), unEx exp)),
                                   i + 1))
                                (alloc, 0)
                                exps
@@ -369,6 +388,22 @@ struct
         frags := Frame.PROC {body=body, frame=frame} :: (!frags)
       end
       | procEntryExit _ = ErrorMsg.impossible "Attempting to create procEntryExit for Top level"
+
+  (* Add a globally accessible error handler to the end of main.
+   * If an error is caught (eg, null ptr dereference) we jump to the error label
+   * and set the return value to 1 (a la Unix exit status 1) *)
+  fun mainSuffix bodyExp =
+      let
+        val doneLabel = Temp.newLabel ()
+      in
+        Ex (T.ESEQ (seq [unNx bodyExp,
+                         T.MOVE (T.TEMP Frame.RV, T.CONST 0),
+                         T.JUMP (T.NAME doneLabel, [doneLabel]),
+                         T.LABEL ERROR,
+                         T.MOVE (T.TEMP Frame.RV, T.CONST 1),
+                         T.LABEL doneLabel],
+                T.TEMP Frame.RV))
+      end
 
   fun result () = !frags
 

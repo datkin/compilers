@@ -5,7 +5,7 @@ fun compile (name, source) =
     (ErrorMsg.reset name;
      Translate.reset ();
      let
-       val ast = Parse.parse (name, source)
+       val ast = Parse.parse (name, source) (* TODO: short circuit compilation on parse errors *)
        val _ = FindEscape.findEscape ast
        val result = Semant.transProg ast
      in
