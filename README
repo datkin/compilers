@@ -2,6 +2,48 @@
   Atkin, Drew
   Mendelewski, John
 
+[IR Translation Comments]
+
+[[Points of Interest]]
+- The transProg signature is:
+  Absyn.exp -> {frags: Translate.Frame.frag list, ty: Types.ty}
+This is to allow our tester to continue checking the expected types of
+programs.
+
+- We've implemented multidimensional arrays, with the following syntax:
+
+let
+  type matrix = array * array of int
+  var A := matrix [5, 5] of 0
+in
+  A[0, 0]
+end
+
+- We've added a rudimentary "exception handler" to the end of the main
+function, which can be jumped to when an error condition is encountered.
+We perform null-pointer checks on all pointer dereferences making use of
+this handler. We have *not* implemented array-bounds checking. However
+we calculate the array size and save it to a register on each array
+access, allowing us to easily implement bounds checking in the future.
+
+- We've made the assumption that builtin functions are one-to-one with
+with functions directly below the top level. Thus, functions with
+Translate.outermost as their *parent* do not take a static link argument
+(including main), and calls to them are implemented using the
+Frame.callExternal mechanism.
+
+[Frame Analysis Comments]
+
+[[Points of Interest]]
+Our frame analyzer allocates four argument passing registers for MIPS.
+The calling convention we assume is that the first four arguments to
+a function are always passed through these registers. The functions
+view shift then copies these registers into "dedicated" registers or
+on to the stack depending on whether or not they escape. All other
+arguments are passed by the caller on the stack, and the callee accesses
+them directly from the frame pointer (it does not copy them into it's
+own stack).
+
 [Type Checker Comments]
 
 [[Points of Interest]]

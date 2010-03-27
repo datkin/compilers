@@ -146,6 +146,7 @@ struct
       let
         fun genIdxCode (idxExp, (sizeExp, offsetExp, sizeAddrExp, code)) =
           let
+            val continue = Temp.newLabel ()
             val sizeTmp = T.TEMP (Temp.newTemp ())
             val offsetTmp = T.TEMP (Temp.newTemp ())
             val sizeAddrTmp = T.TEMP (Temp.newTemp ())
@@ -163,11 +164,12 @@ struct
                                                 T.BINOP (T.MUL,
                                                          unEx idxExp,
                                                          sizeExp)))
+            val boundsCheck = T.CJUMP (T.LT, offsetTmp, sizeTmp, continue, ERROR)
           in
             (sizeTmp,
              offsetTmp,
              sizeAddrTmp,
-             code @ [newSizeAddrExp, newSizeExp, newOffsetExp])
+             code @ [newSizeAddrExp, newSizeExp, newOffsetExp, boundsCheck, T.LABEL continue])
           end
         val startAddrTmp = T.TEMP (Temp.newTemp ())
         val startSizeAddrExp = T.BINOP (T.PLUS,
@@ -358,11 +360,11 @@ struct
                             (hd dimTemps)
                             (tl dimTemps)
         val resultTemp = T.TEMP (Temp.newTemp ())
-        fun ihatedrew (temp, i) =
+        fun storeSize (temp, i) =
             T.MOVE (T.MEM (T.BINOP (T.PLUS, resultTemp, T.CONST (Frame.wordSize * i))), temp)
         val (loadSizesStm, _) = foldl (fn (temp, (stm, i)) =>
-                                        (T.SEQ (stm, ihatedrew (temp, i)), i + 1))
-                                      (ihatedrew (hd dimTemps, 0), 1)
+                                        (T.SEQ (stm, storeSize (temp, i)), i + 1))
+                                      (storeSize (hd dimTemps, 0), 1)
                                       (tl dimTemps)
       in
         Ex (T.ESEQ (seq [productRegistersStm,
