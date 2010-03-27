@@ -45,6 +45,7 @@ end
 structure Translate :> TRANSLATE =
 struct
   structure Frame = MipsFrame
+  structure TargetInt = Int32
   structure T = Tree and A = Absyn
 
   datatype exp = Ex of T.exp
@@ -141,51 +142,54 @@ struct
                     T.MEM (T.BINOP (T.PLUS, unEx varExp, T.CONST (offset * Frame.wordSize)))))
       end
 
-  (* TODO: add bounds checks *)
-  fun subscriptVar (varExp, exps, dim) =
+  fun subscriptVar (_, [], _) = ErrorMsg.impossible "Cannot generate subscript for 0-dim array"
+    | subscriptVar (varExp, idxExp :: idxExps, dim) =
       let
-        fun genIdxCode (idxExp, (sizeExp, offsetExp, sizeAddrExp, code)) =
+        val arrayTmp = T.TEMP (Temp.newTemp ())
+        val sizeTmp = T.TEMP (Temp.newTemp ())
+        val idxTmp = T.TEMP (Temp.newTemp ())
+        fun getSizeExp i = (* retrieve the size of the i dimension (zero-indexed) *)
+            T.MEM (T.BINOP (T.PLUS,
+                            arrayTmp,
+                            T.CONST (Frame.wordSize * i))) (* TODO: constant fold... *)
+
+        fun calcOffset (idxExp, (i, code)) =
           let
+            val dimTmp = T.TEMP (Temp.newTemp ()) (* pull this out? *)
+            val setDimTmp = T.MOVE (dimTmp, getSizeExp i)
+            val updateIdxTmp = T.MOVE (idxTmp, T.BINOP (T.PLUS,
+                                                        idxTmp,
+                                                        T.BINOP (T.MUL, dimTmp, unEx idxExp)))
+            val updateSizeTmp = T.MOVE (sizeTmp, T.BINOP (T.MUL,
+                                                          sizeTmp,
+                                                          dimTmp))
             val continue = Temp.newLabel ()
-            val sizeTmp = T.TEMP (Temp.newTemp ())
-            val offsetTmp = T.TEMP (Temp.newTemp ())
-            val sizeAddrTmp = T.TEMP (Temp.newTemp ())
-            val newSizeAddrExp = T.MOVE (sizeAddrTmp,
-                                         T.BINOP (T.MINUS,
-                                                  sizeAddrExp,
-                                                  T.CONST Frame.wordSize))
-            val newSizeExp = T.MOVE (sizeTmp,
-                                     T.BINOP (T.MUL,
-                                              sizeExp,
-                                              T.MEM sizeAddrTmp))
-            val newOffsetExp = T.MOVE (offsetTmp,
-                                       T.BINOP (T.PLUS,
-                                                offsetExp,
-                                                T.BINOP (T.MUL,
-                                                         unEx idxExp,
-                                                         sizeExp)))
-            val boundsCheck = T.CJUMP (T.LT, offsetTmp, sizeTmp, continue, ERROR)
+            val boundsCheck = T.CJUMP (T.LT, idxTmp, sizeTmp, continue, ERROR)
           in
-            (sizeTmp,
-             offsetTmp,
-             sizeAddrTmp,
-             code @ [newSizeAddrExp, newSizeExp, newOffsetExp, boundsCheck, T.LABEL continue])
+            (i - 1, code @ [setDimTmp, updateIdxTmp, updateSizeTmp, boundsCheck, T.LABEL continue])
           end
-        val startAddrTmp = T.TEMP (Temp.newTemp ())
-        val startSizeAddrExp = T.BINOP (T.PLUS,
-                                        unEx varExp,
-                                        T.CONST (dim * Frame.wordSize))
-        val (_, offsetExp, _, code) = foldr genIdxCode
-                                            (T.CONST 1, T.CONST 0, startAddrTmp, [])
-                                            exps
+        val continue = Temp.newLabel ()
+        val (_, code) = foldr calcOffset
+                              (* Do the initial calculation outside of the fold.
+                               * This is a slight optimization, and keeps us from
+                               * doing an extra multiply and add on the first dimension,
+                               * b/c we initialize the size and idx tmps with their
+                               * first values, rather than with the base values for
+                               * the fold. *)
+                              (dim - 2, [T.MOVE (arrayTmp, unEx varExp),
+                                         T.MOVE (sizeTmp, getSizeExp (dim - 1)),
+                                         T.MOVE (idxTmp, unEx idxExp),
+                                         T.CJUMP (T.LT, idxTmp, sizeTmp, continue, ERROR),
+                                         T.LABEL continue])
+                              idxExps
         val code = seq code
       in
-        Ex (T.ESEQ (T.MOVE (startAddrTmp, startSizeAddrExp),
-                    T.MEM (T.BINOP (T.PLUS,
-                                    startAddrTmp,
-                                    T.ESEQ (code, T.BINOP (T.MUL,
-                                                           T.CONST Frame.wordSize,
-                                                           offsetExp))))))
+        Ex (T.ESEQ (code,
+                    T.MEM (T.BINOP (T.PLUS, arrayTmp,
+                                    T.BINOP (T.PLUS,
+                                             T.CONST (dim * Frame.wordSize),
+                                             T.BINOP (T.MUL, T.CONST Frame.wordSize,
+                                                      idxTmp))))))
       end
 
   fun assign (lExp, rExp) = Nx (T.MOVE (unEx lExp, unEx rExp))
@@ -270,6 +274,34 @@ struct
     | trPtrOp A.NeqOp = T.NE
     | trPtrOp _ = ErrorMsg.impossible "Attempting non-equality test on pointers"
 
+  fun arithOp (oper, T.CONST n1, T.CONST n2) =
+      (* Constant airthmetic is converted to the target representation, calculated,
+       * and then converted back to the compiler's native represention for use in the IR *)
+      Ex (T.CONST (TargetInt.toInt ((constantFolder oper) (TargetInt.fromInt n1, TargetInt.fromInt n2))))
+    | arithOp (oper, left, right) =
+      case trIntOp oper of
+        BINOP b => Ex (T.BINOP (b, left, right))
+      | RELOP p => Cx (fn (t, f) => T.CJUMP (p, left, right, t, f))
+  and constantFolder oper =
+      let
+        fun numericCompare compare = (fn nums => if (compare nums) then
+                                                   TargetInt.fromInt 1
+                                                 else
+                                                   TargetInt.fromInt 0)
+      in
+        case oper of
+          A.PlusOp => TargetInt.+
+        | A.MinusOp => TargetInt.-
+        | A.TimesOp => TargetInt.*
+        | A.DivideOp => TargetInt.div
+        | A.EqOp => numericCompare (fn nums => (TargetInt.compare nums) = General.EQUAL)
+        | A.NeqOp => numericCompare (fn nums => (TargetInt.compare nums) <> General.EQUAL)
+        | A.LtOp => numericCompare TargetInt.<
+        | A.LeOp => numericCompare TargetInt.<=
+        | A.GtOp => numericCompare TargetInt.>
+        | A.GeOp => numericCompare TargetInt.>=
+      end
+
   fun binop (ty, leftExp, oper, rightExp) =
       let
         val leftExp = unEx leftExp
@@ -277,10 +309,7 @@ struct
       in
         case ty of
             Types.STRING => trStrOp oper leftExp rightExp
-          | Types.INT =>
-            (case trIntOp oper of
-              BINOP b => Ex (T.BINOP (b, leftExp, rightExp))
-            | RELOP p => Cx (fn (t, f) => T.CJUMP (p, leftExp, rightExp, t, f)))
+          | Types.INT => arithOp (oper, leftExp, rightExp)
           | _ => Cx (fn (t, f) => T.CJUMP (trPtrOp oper, leftExp, rightExp, t, f))
       end
 
@@ -291,41 +320,43 @@ struct
         val elseLabel = Temp.newLabel ()
         val joinLabel = Temp.newLabel ()
       in
-        case (thenExp, elseExp) of
-             (_, Ex (T.CONST 0)) => (* Special case for & *)
-               Cx (fn (t, f) =>
-                    seq [(unCx testExp) (thenLabel, f),
-                         T.LABEL thenLabel,
-                         (unCx thenExp) (t, f)])
-           | (Ex (T.CONST 1), _) => (* Special case for | *)
-               Cx (fn (t, f) =>
-                    seq [(unCx testExp) (t, elseLabel),
-                         T.LABEL elseLabel,
-                         (unCx elseExp) (t, f)])
-           | (Cx _, _) =>
-               Cx (fn (t, f) =>
-                    seq [(unCx testExp) (thenLabel, elseLabel),
-                         T.LABEL thenLabel,
-                         (unCx thenExp) (t, f),
-                         T.LABEL elseLabel,
-                         (unCx elseExp) (t, f)])
-           | (Ex _, _) =>
-               Ex (T.ESEQ (seq [(unCx testExp) (thenLabel, elseLabel),
-                                T.LABEL thenLabel,
-                                T.MOVE (T.TEMP r, unEx thenExp),
-                                T.JUMP (T.NAME joinLabel, [joinLabel]),
-                                T.LABEL elseLabel,
-                                T.MOVE (T.TEMP r, unEx elseExp),
-                                T.LABEL joinLabel],
-                           T.TEMP r))
-           | (Nx _, _) =>
-               Nx (seq [(unCx testExp) (thenLabel, elseLabel),
-                        T.LABEL thenLabel,
-                        unNx thenExp,
-                        T.JUMP (T.NAME joinLabel, [joinLabel]),
-                        T.LABEL elseLabel,
-                        unNx elseExp,
-                        T.LABEL joinLabel])
+        case (unEx testExp, thenExp, elseExp) of
+          (T.CONST 1, _, _) => thenExp
+        | (T.CONST 0, _, _) => elseExp
+        |  (_, _, Ex (T.CONST 0)) => (* Special case for & *)
+           Cx (fn (t, f) =>
+                  seq [(unCx testExp) (thenLabel, f),
+                       T.LABEL thenLabel,
+                       (unCx thenExp) (t, f)])
+        | (_, Ex (T.CONST 1), _) => (* Special case for | *)
+          Cx (fn (t, f) =>
+                 seq [(unCx testExp) (t, elseLabel),
+                      T.LABEL elseLabel,
+                      (unCx elseExp) (t, f)])
+        | (_, Cx _, _) =>
+          Cx (fn (t, f) =>
+                 seq [(unCx testExp) (thenLabel, elseLabel),
+                      T.LABEL thenLabel,
+                      (unCx thenExp) (t, f),
+                      T.LABEL elseLabel,
+                      (unCx elseExp) (t, f)])
+        | (_, Ex _, _) =>
+          Ex (T.ESEQ (seq [(unCx testExp) (thenLabel, elseLabel),
+                           T.LABEL thenLabel,
+                           T.MOVE (T.TEMP r, unEx thenExp),
+                           T.JUMP (T.NAME joinLabel, [joinLabel]),
+                           T.LABEL elseLabel,
+                           T.MOVE (T.TEMP r, unEx elseExp),
+                           T.LABEL joinLabel],
+                      T.TEMP r))
+        | (_, Nx _, _) =>
+          Nx (seq [(unCx testExp) (thenLabel, elseLabel),
+                   T.LABEL thenLabel,
+                   unNx thenExp,
+                   T.JUMP (T.NAME joinLabel, [joinLabel]),
+                   T.LABEL elseLabel,
+                   unNx elseExp,
+                   T.LABEL joinLabel])
       end
 
   fun callExp (label, args, current, Nested {parent=target as Nested _, frame, id}) =
@@ -399,10 +430,9 @@ struct
         val doneLabel = Temp.newLabel ()
       in
         Ex (T.ESEQ (seq [unNx bodyExp,
-                         T.MOVE (T.TEMP Frame.RV, T.CONST 0),
                          T.JUMP (T.NAME doneLabel, [doneLabel]),
                          T.LABEL ERROR,
-                         T.MOVE (T.TEMP Frame.RV, T.CONST 1),
+                         T.EXP (Frame.externalCall ("exit", [T.CONST 1])),
                          T.LABEL doneLabel],
                 T.TEMP Frame.RV))
       end
