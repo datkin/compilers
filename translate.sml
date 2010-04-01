@@ -323,12 +323,12 @@ struct
         case (unEx testExp, thenExp, elseExp) of
           (T.CONST 1, _, _) => thenExp
         | (T.CONST 0, _, _) => elseExp
-        |  (_, _, Ex (T.CONST 0)) => (* Special case for & *)
+        |  (_, Cx _, Ex (T.CONST 0)) => (* Special case for & *)
            Cx (fn (t, f) =>
                   seq [(unCx testExp) (thenLabel, f),
                        T.LABEL thenLabel,
                        (unCx thenExp) (t, f)])
-        | (_, Ex (T.CONST 1), _) => (* Special case for | *)
+        | (_, Ex (T.CONST 1), Cx _) => (* Special case for | *)
           Cx (fn (t, f) =>
                  seq [(unCx testExp) (t, elseLabel),
                       T.LABEL elseLabel,
@@ -428,13 +428,14 @@ struct
   fun mainSuffix bodyExp =
       let
         val doneLabel = Temp.newLabel ()
+        val resultTmp = Temp.newTemp () (* hack to save body value *)
       in
-        Ex (T.ESEQ (seq [unNx bodyExp,
+        Ex (T.ESEQ (seq [T.MOVE (T.TEMP resultTmp, unEx bodyExp),
                          T.JUMP (T.NAME doneLabel, [doneLabel]),
                          T.LABEL ERROR,
                          T.EXP (Frame.externalCall ("exit", [T.CONST 1])),
                          T.LABEL doneLabel],
-                T.TEMP Frame.RV))
+                T.TEMP resultTmp))
       end
 
   fun result () = !frags

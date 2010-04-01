@@ -28,22 +28,11 @@ struct
       (* All arguments after the first 4 are passed by the caller, on the stack
        * *above* the frame pointer. They are pushed by the caller from right to
        * left, making the last argument the furthest one from the frame pointer. *)
-      (InFrame ((i - numArgTemps) * wordSize) :: accesses, i+1, frameOffset)
-
-
-      (*
-  fun escapeToAccess (true, (access, frameOffset, registerArgs)) =
-      (InFrame (frameOffset + wordSize) :: access, frameOffset + wordSize, registerArgs)
-    | escapeToAccess (false, (access, frameOffset, registerArgs)) =
-      if registerArgs < maxRegisterArgs then
-        (InReg (Temp.newTemp ()) :: access, frameOffset, registerArgs + 1)
-      else
-        (InFrame (frameOffset + wordSize) :: access, frameOffset + wordSize, registerArgs)
-        *)
+      (InFrame ((i - numArgTemps + 1) * wordSize) :: accesses, i+1, frameOffset)
 
   fun newFrame {name, formals} =
     let
-      val (formals, frameOffset, _) = (foldl allocFormal ([], 0, 0) formals)
+      val (formals, _, frameOffset) = (foldl allocFormal ([], 0, 0) formals)
     in
       {name = name, formals = (rev formals),
        localCount = ref 0, frameOffset = ref frameOffset}
