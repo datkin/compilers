@@ -22,6 +22,7 @@ frame.sml
 mipsframe.sml
 temp.sig
 temp.sml
+vm.sml
 $/basis.cm
 $/ml-yacc-lib.cm
 $/smlnj-lib.cm

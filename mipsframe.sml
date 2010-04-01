@@ -80,4 +80,86 @@ struct
        | _  => T.SEQ (viewShift, body)
   end
 
+  val SP = Temp.newTemp ()
+  val RA = Temp.newTemp ()
+
+  fun rewriteCall (exp, args) =
+      let
+        val returnLabel = Temp.newLabel ()
+        val registerArgs = if length args > numArgTemps then
+                             List.take (args, numArgTemps)
+                           else
+                             args
+        val stackArgs = if length args > numArgTemps then
+                          List.drop (args, numArgTemps)
+                        else
+                          []
+        val (_, stackArgCode) =
+            (List.foldr (fn (argExp, (stackPos, code)) =>
+                            (stackPos + 1,
+                             T.MOVE (T.MEM (T.BINOP (T.MINUS,
+                                                     T.TEMP SP,
+                                                     T.CONST (wordSize * stackPos))),
+                                     argExp) :: code))
+                        (0, [])
+                        stackArgs)
+      in
+        T.ESEQ (seq ([(* Bump the SP two and save the current fp, ra *)
+                      T.MOVE (T.TEMP SP, T.BINOP (T.MINUS,
+                                                  T.TEMP SP,
+                                                  T.CONST (wordSize * 2))),
+                      T.MOVE (T.MEM (T.BINOP (T.PLUS,
+                                              T.TEMP SP,
+                                              T.CONST wordSize)),
+                              T.TEMP FP),
+                      T.MOVE (T.MEM (T.BINOP (T.PLUS,
+                                              T.TEMP SP,
+                                              T.CONST (wordSize * 2))),
+                              T.TEMP RA)] @
+
+                     (* Insn to bump the stack pointer needs to be the first thing
+                      * in the fn *def*, not the call itself. *)
+                     (* last stack arg at fp-4 *)
+                     ListPair.map (fn (argExp, argTmp) => T.MOVE (T.TEMP argTmp,
+                                                                  argExp))
+                                  (registerArgs, ARGS) @
+                     stackArgCode @
+                     [T.MOVE (T.TEMP FP, T.BINOP (T.MINUS,
+                                                  T.TEMP SP,
+                                                  T.CONST (wordSize * (length stackArgs)))),
+                      T.MOVE (T.TEMP RA, T.NAME returnLabel), (* jal insn *)
+                      T.JUMP (exp, []),
+                      T.LABEL returnLabel,
+                      (* Retore FP, RA and the stack pointer *)
+                      T.MOVE (T.TEMP FP, T.MEM (T.BINOP (T.PLUS,
+                                                         T.TEMP SP,
+                                                         T.CONST wordSize))),
+                      T.MOVE (T.TEMP RA, T.MEM (T.BINOP (T.PLUS,
+                                                         T.TEMP SP,
+                                                         T.CONST (wordSize *2)))),
+                      T.MOVE (T.TEMP SP, T.BINOP (T.PLUS,
+                                                  T.TEMP SP,
+                                                  T.CONST (wordSize * 2)))]),
+                T.TEMP RV)
+      end
+
+  fun rewriteBody (body, frame) =
+      let
+        val argCount = length (formals frame)
+        val stackArgCount = if argCount > numArgTemps then
+                              argCount - numArgTemps
+                            else
+                              0
+        val stackOffset = (stackArgCount * wordSize) + ~(!(#frameOffset frame))
+      in
+        seq [T.MOVE (T.TEMP SP, T.BINOP (T.MINUS,
+                                         T.TEMP SP,
+                                         T.CONST stackOffset)),
+             body,
+             T.MOVE (T.TEMP SP, T.BINOP (T.PLUS,
+                                         T.TEMP SP,
+                                         T.CONST stackOffset)),
+             T.JUMP (T.TEMP RA, [])]
+      end
+
 end

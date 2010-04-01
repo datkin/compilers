@@ -15,4 +15,9 @@ sig
   val RV : Temp.temp
   val wordSize : int
   val exp : access -> Tree.exp -> Tree.exp
+
+  val rewriteCall : Tree.exp * Tree.exp list -> Tree.exp
+  val rewriteBody : Tree.stm * frame -> Tree.stm
+  val SP : Temp.temp
+  val RA : Temp.temp
 end
