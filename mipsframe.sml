@@ -1,11 +1,46 @@
 structure MipsFrame :> FRAME =
 struct
+  type register = string
   structure T = Tree
 
   val numArgTemps = 4
   val FP = Temp.newTemp ()
   val RV = Temp.newTemp ()
-  val ARGS = List.tabulate (numArgTemps, (fn _ => Temp.newTemp ()))
+  val SP = Temp.newTemp ()
+  val RA = Temp.newTemp ()
+  val ZERO = Temp.newTemp ()
+
+  val specialregs = [FP, RV, SP, RA, ZERO]
+  val argregs = List.tabulate (numArgTemps, (fn _ => Temp.newTemp ()))
+  val calleesaves = List.tabulate (8, (fn _ => Temp.newTemp ()))
+  val callersaves = List.tabulate (10, (fn _ => Temp.newTemp()))
+
+  fun labelRegisters label regs =
+      let
+        val (labels, _) =
+            foldl (fn (r, (rs, n)) =>
+                      ((r, label ^ Int.toString n) :: rs, n+1))
+                  ([], 0)
+                  regs
+      in
+        labels
+      end
+
+  val tempMap = foldr Temp.Table.enter' Temp.Table.empty
+                      ([(FP, "fp"),
+                        (RV, "rv"),
+                        (SP, "sp"),
+                        (RA, "ra"),
+                        (ZERO, "zero")] @
+                       labelRegisters "a" argregs @
+                       labelRegisters "s" calleesaves @
+                       labelRegisters "t" callersaves)
+
+  fun tempToRegister temp =
+      "$" ^ (case Temp.Table.look (tempMap, temp) of
+               SOME register => register
+             | NONE => Temp.toString temp)
+
   val wordSize = 4
 
   datatype access = InFrame of int | InReg of Temp.temp
@@ -68,20 +103,53 @@ struct
     | seq [exp] = exp
     | seq (exp :: exps) = (T.SEQ (exp, (seq exps)))
 
+  fun moveReg (reg, tmp) =
+      T.MOVE (T.TEMP reg, T.TEMP tmp)
+
+  (* TODO: we will implement a spilling register allocator,
+   * so we are safe allocating temps for all the callee-save
+   * registers. *)
   fun procEntryExit1 (frame, body) =
   let
+    (* TODO: FP adjustment/restore is done outside of this code, by
+     * procEntryExit3 (?) so we need somewhere else to save the old FP? *)
+    val saved = [RA] @ calleesaves
+    val temps = map (fn temp => Temp.newTemp ()) saved
+    val registerSaves = seq (ListPair.mapEq moveReg (temps, saved))
+    val registerRestores = seq (ListPair.mapEq moveReg (saved, temps))
+    val body' = seq [registerSaves, body, registerRestores]
+
+    fun moveArg (arg, access) =
+      T.MOVE (exp access (T.TEMP FP), T.TEMP arg)
     val funFormals = formals frame
-    fun moveArg (argTemp, access) =
-      T.MOVE (exp access (T.TEMP FP), T.TEMP argTemp)
-    val viewShift = seq (ListPair.map moveArg (ARGS, funFormals))
+    val viewShift = seq (ListPair.map moveArg (argregs, funFormals))
   in
     case funFormals of
-         [] => body
-       | _  => T.SEQ (viewShift, body)
+         [] => body'
+       | _  => T.SEQ (viewShift, body')
   end
 
-  val SP = Temp.newTemp ()
-  val RA = Temp.newTemp ()
+  fun procEntryExit2 (frame, instrs) =
+      instrs @
+      [Assem.OPER {assem="",
+                   dst=[],
+                  (* This indicates that these registers will be used as
+                   * sources by instructions added in the final phase
+                   * (procEntryExit3). *)
+                   src=[RA, SP, FP],
+                   jump=SOME []}]
+
+  fun procEntryExit3 (frame, body) =
+      (* TODO: add sp allocation, fp adjustment *)
+      {prolog = Symbol.name (name frame) ^ ": # PROCEDURE\n",
+       body = body,
+       (* TODO: restore sp, fp *)
+       epilog = "jr $ra #END\n"}
+
+  fun string (label, str) =
+      (Symbol.name label) ^ ":\n" ^
+      "\t.word " ^ (Int.toString (String.size str)) ^ "\n" ^
+      "\t.ascii \"" ^ str ^ "\"\n"
 
   fun rewriteCall (exp, args) =
       let
@@ -122,7 +190,7 @@ struct
                      (* last stack arg at fp-4 *)
                      ListPair.map (fn (argExp, argTmp) => T.MOVE (T.TEMP argTmp,
                                                                   argExp))
-                                  (registerArgs, ARGS) @
+                                  (registerArgs, argregs) @
                      stackArgCode @
                      [T.MOVE (T.TEMP FP, T.BINOP (T.MINUS,
                                                   T.TEMP SP,
@@ -163,3 +231,5 @@ struct
       end
 
 end
+
+structure Frame = MipsFrame

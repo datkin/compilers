@@ -6,6 +6,7 @@ struct
   type 'a table = 'a IntBinaryMap.map
   val empty = IntBinaryMap.empty
   fun enter (t, k, a) = IntBinaryMap.insert (t, getInt k, a)
+  fun enter' ((k, a), table) = enter (table, k, a)
   fun look (t, k) = IntBinaryMap.find(t, getInt k)
   fun entries (t) =
       map (fn (i, v) => (getKey i, v))

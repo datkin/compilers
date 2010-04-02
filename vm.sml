@@ -102,7 +102,7 @@ and rewriteExp (T.BINOP (b, e1, e2)) = T.BINOP (b,
   | rewriteExp (T.ESEQ (s, e)) = T.ESEQ (rewriteStm s, rewriteExp e)
   | rewriteExp (T.NAME l) = T.NAME l
   | rewriteExp (T.CONST n) = T.CONST n
-  | rewriteExp (T.CALL (exp, exps)) = Translate.Frame.rewriteCall (exp, exps)
+  | rewriteExp (T.CALL (exp, exps)) = Frame.rewriteCall (exp, exps)
 
 (* k is the actual continuation: store -> v *)
 fun stmToCps (T.SEQ (s1, s2)) (k, t) =
@@ -233,7 +233,7 @@ and expToCps (T.MEM exp) (k, t) =
        * to write args > 4 to a position relative to the *stack*
        * pointer. But we also need to update the SP and FP... hrm *)
       raise Fail "encountered call in conversion";
-      expToCps (Translate.Frame.rewriteCall (exp, exps)) (k, t)
+      expToCps (Frame.rewriteCall (exp, exps)) (k, t)
     end
   | expToCps (T.BINOP (binop, e1, e2)) (k, t) =
     let
@@ -251,10 +251,10 @@ and expToCps (T.MEM exp) (k, t) =
       expToCps e1 (k1, t')
     end
 
-fun transFrags (Translate.Frame.PROC {body, frame} :: frags) =
-    Translate.Frame.PROC {body=rewriteStm body, frame=frame} ::
-    map (fn (Translate.Frame.PROC {body, frame}) =>
-            Translate.Frame.PROC {body=Translate.Frame.rewriteBody (rewriteStm body, frame), frame=frame}
+fun transFrags (Frame.PROC {body, frame} :: frags) =
+    Frame.PROC {body=rewriteStm body, frame=frame} ::
+    map (fn (Frame.PROC {body, frame}) =>
+            Frame.PROC {body=Frame.rewriteBody (rewriteStm body, frame), frame=frame}
           | x => x)
         frags
   | transFrags _ = raise Fail "transFrags failed"
@@ -262,28 +262,28 @@ fun transFrags (Translate.Frame.PROC {body, frame} :: frags) =
 fun progToCps (main :: frags) =
     let
       val id = (fn x => x)
-      val (_, t) = foldr (fn (Translate.Frame.PROC {body, frame}, (_, t)) =>
+      val (_, t) = foldr (fn (Frame.PROC {body, frame}, (_, t)) =>
                              let
                                val (k, t') = stmToCps body (id, t)
                              in
-                               (id, (Translate.Frame.name frame, k) :: t')
+                               (id, (Frame.name frame, k) :: t')
                              end
                              (* TODO: will need to eventually split the list and
                               * move the string labels into memory, replacing them with pointers? erg...
                               * or make the code store a sum type over strings and continuations... *)
-                           | (Translate.Frame.STRING (label, str), (_, t)) => (id, t))
+                           | (Frame.STRING (label, str), (_, t)) => (id, t))
                          (id, [])
                          frags
       val (k, t) = case main of
-                     Translate.Frame.PROC {body, frame} =>
+                     Frame.PROC {body, frame} =>
                      stmToCps body (id, t)
                    | _ => raise Fail "main must be a proc"
       val str = foldr (fn ((r, v), str) =>
                           updateReg str (r, v))
                       (labelsToStore t)
-                      [(Translate.Frame.FP, INT ~1),
-                       (Translate.Frame.SP, INT ~1),
-                       (Translate.Frame.RA, INT 0)]
+                      [(Frame.FP, INT ~1),
+                       (Frame.SP, INT ~1),
+                       (Frame.RA, INT 0)]
     in
       (k, str)
     end
@@ -298,5 +298,5 @@ val frags = #frags (Tiger.compileStr "let function foo(x: int): int = let functi
 val [Translate.Frame.PROC {body=bMain, frame=fMain}, Translate.Frame.PROC {body=bFoo, frame=fFoo}, Translate.Frame.PROC {body=bBar, frame=fBar}] = frags;
 val (k, str) = VM.progToCps frags;
 val str' = k str;
-VM.getReg str' Translate.Frame.RV
+VM.getReg str' Frame.RV
 *)

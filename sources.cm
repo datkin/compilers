@@ -1,9 +1,14 @@
 Group is
 
 absyn.sml
+assem.sml
+canon.sml
+codegen.sig
 env.sml
 errormsg.sml
 findescape.sml
+graph.sig
+graph.sml
 parse.sml
 prabsyn.sml
 printtree.sml
@@ -20,6 +25,7 @@ tree.sml
 types.sml
 frame.sml
 mipsframe.sml
+mipsgen.sml
 temp.sig
 temp.sml
 vm.sml

@@ -1,10 +1,12 @@
 signature TRANSLATE =
 sig
+  (* structure Frame : FRAME *)
+  (* structure TargetInt : INTEGER *)
+
   type exp
   type level
   type access
   type breakpoint
-  structure Frame : FRAME
 
   val BOGUS : exp
   val UNIT : exp
@@ -42,9 +44,11 @@ sig
   val reset : unit -> unit
 end
 
+(*functor Translate (structure Frame : FRAME
+                   structure TargetInt : INTEGER) :> TRANSLATE =*)
 structure Translate :> TRANSLATE =
 struct
-  structure Frame = MipsFrame
+(* structure Frame = Frame *)
   structure TargetInt = Int32
   structure T = Tree and A = Absyn
 
@@ -442,3 +446,9 @@ struct
 
   fun reset () = frags := []
 end
+(*
+structure MipsTranslate = Translate(struct
+                                    structure Frame = MipsFrame
+                                    structure TargetInt = Int32
+                                    end)
+*)

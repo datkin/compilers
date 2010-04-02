@@ -1,5 +1,5 @@
 structure Semant : sig
-  val transProg : Absyn.exp -> {frags: Translate.Frame.frag list, ty: Types.ty}
+  val transProg : Absyn.exp -> {frags: Frame.frag list, ty: Types.ty}
 end =
 struct
 

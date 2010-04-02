@@ -45,7 +45,7 @@ struct
   type 'a table= 'a Table.table
   val empty = Table.empty
   val enter = Table.enter
+  val enter' = Table.enter'
   val look = Table.look
   val entries = Table.entries
-  fun enter' ((sym, a), table) = enter (table, sym, a)
 end

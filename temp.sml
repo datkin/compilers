@@ -1,4 +1,4 @@
-(* make this an abstraction sometime *)
+(* make this an abstraction sometime - make Temp opaque? *)
 structure Temp : TEMP =
 struct
     type temp = int

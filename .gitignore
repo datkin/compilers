@@ -1,6 +1,7 @@
 .cm
 tiger-sources
 *.swp
+*.s
 tiger.lex.sml
 tiger.grm.desc
 tiger.grm.sig
