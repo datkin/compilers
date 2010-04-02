@@ -27,7 +27,11 @@ fun format saytemp =
 	      | f( #"`":: _ :: rest) = ErrorMsg.impossible "bad Assem format"
 	      | f(c :: rest) = (c :: f rest)
 	      | f nil = nil
-	  in implode(f(explode assem))
+	  in
+            if assem <> "" then
+              "\t" ^ (implode(f(explode assem))) ^ "\n"
+            else
+              ""
 	  end
     in fn OPER{assem,dst,src,jump=NONE} => speak(assem,dst,src,nil)
         | OPER{assem,dst,src,jump=SOME j} => speak(assem,dst,src,j)

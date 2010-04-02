@@ -141,14 +141,16 @@ struct
 
   fun procEntryExit3 (frame, body) =
       (* TODO: add sp allocation, fp adjustment *)
-      {prolog = Symbol.name (name frame) ^ ": # PROCEDURE\n",
-       body = body,
+      {prolog= "\n" ^ Symbol.name (name frame) ^ ":\t# Procedure\n",
+       body=body,
        (* TODO: restore sp, fp *)
-       epilog = "jr $ra #END\n"}
+       epilog="\tjr $ra # End\n"}
 
   fun string (label, str) =
-      (Symbol.name label) ^ ":\n" ^
-      "\t.word " ^ (Int.toString (String.size str)) ^ "\n" ^
+       (* Ensure each word starts aligned on a word boundary.
+        * (see: Hennessy & Patterson A-47) *)
+      "\t.align 2\n" ^
+      (Symbol.name label) ^ ":\t.word " ^ (Int.toString (String.size str)) ^ "\n" ^
       "\t.ascii \"" ^ str ^ "\"\n"
 
   fun rewriteCall (exp, args) =

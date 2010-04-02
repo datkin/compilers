@@ -11,7 +11,7 @@ sig
   val entries : 'a table -> (symbol * 'a) list
 end
 
-structure Symbol :> SYMBOL =
+structure Symbol : SYMBOL =
 struct
 
   type symbol = string * int

@@ -2,6 +2,15 @@
   Atkin, Drew
   Mendelewski, John
 
+[Instruction Selection Comments]
+
+[[Points of Interest]]
+- Our instruction selector emits code to save and restore *all* caller
+and callee save registers to temporaries. We will implement a spilling
+register allocator to eliminate extraneous callee register saves. It's
+unclear to us if register allocation will also eliminate unneccesary
+caller register saves, but if not we will fix this later.
+
 [IR Translation Comments]
 
 [[Points of Interest]]
