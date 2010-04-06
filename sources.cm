@@ -7,8 +7,11 @@ codegen.sig
 env.sml
 errormsg.sml
 findescape.sml
+flowgraph.sml
 graph.sig
 graph.sml
+liveness.sml
+makegraph.sml
 parse.sml
 prabsyn.sml
 printtree.sml
