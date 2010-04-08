@@ -11,12 +11,8 @@ fun withOpenFile name f =
 
 structure Frame = Frame
 
-fun emitProc out (Frame.PROC {body, frame}) =
+fun emitProc out (frame, instr) =
     let
-      val stms = Canon.linearize body
-      val stms' = Canon.traceSchedule (Canon.basicBlocks stms)
-      val instr = List.concat (map (MipsGen.codegen frame) stms')
-      val instr = Frame.procEntryExit2 (frame, instr)
       val {prolog, body=instr, epilog} = Frame.procEntryExit3 (frame, instr)
       val format0 = Assem.format Frame.tempToRegister
     in
@@ -26,38 +22,75 @@ fun emitProc out (Frame.PROC {body, frame}) =
           instr;
       TextIO.output (out, epilog)
     end
-    (* should be .data for mips *)
-  | emitProc out (Frame.STRING (label, str)) =
+
+fun emitStr out (label, str) =
     TextIO.output (out, Frame.string (label, str))
 
+fun genInstr {body, frame} =
+    let
+      val stms = Canon.linearize body
+      val stms' = Canon.traceSchedule (Canon.basicBlocks stms)
+      val instrs = List.concat (map (MipsGen.codegen frame) stms')
+      val instrs' = Frame.procEntryExit2 (frame, instrs)
+    in
+      instrs'
+    end
+
+fun rewriteProcs procs : (Frame.frame * Assem.instr list) list =
+    let
+      val instrs = List.concat (map #2 procs)
+      val (flowgraph, nodes) = MakeGraph.instrs2graph instrs
+    in
+      procs
+    end
+
 fun compile (name, source) =
-    (ErrorMsg.reset name;
-     Translate.reset ();
-     let
-       (* TODO: short circuit compilation on parse errors *)
-       val ast = Parse.parse (name, source)
-       val _ = FindEscape.findEscape ast
-       val result as {frags, ty} = Semant.transProg ast
-       fun split (proc as Frame.PROC _, (strs, procs)) = (strs, proc :: procs)
-         | split (str as Frame.STRING _, (strs, procs)) = (str :: strs, procs)
-       val (strFrags, procFrags) = foldr split ([], []) frags
+    let
+      val _ = (ErrorMsg.reset name; Translate.reset ())
+
+      val ast = Parse.parse (name, source)
+      (* Short circuit compilation on parse errors. *)
+      val _ = if !ErrorMsg.anyErrors then
+                (app ErrorMsg.display (!ErrorMsg.errorLog);
+                 raise Fail "Compilation failed with parsing errors")
+              else ()
+
+      val _ = FindEscape.findEscape ast
+      val {frags, ty} = Semant.transProg ast
+      val _ = if !ErrorMsg.anyErrors then
+                (app ErrorMsg.display (!ErrorMsg.errorLog);
+                 raise Fail "Compilation failed with static errors")
+              else ()
+
+         (*
+      fun isProc Frame.PROC _ = true
+        | isProc Frame.STRING _ = false
+      val (procFrags, strFrags) = List.partition isProc frags
+          *)
+
+      fun partitionFrags (Frame.PROC proc, (procs, strs)) =
+          (proc :: procs, strs)
+        | partitionFrags (Frame.STRING str, (procs, strs)) =
+          (procs, str :: strs)
+      val (procs, strs) = foldr partitionFrags ([], []) frags
+
+      val procInstrs = map (fn (proc as {body, frame}) =>
+                               (frame, genInstr proc))
+                           procs
+
+      (* do register allocation and rewrite (spill) the instrs as necessary *)
+      val instrs' = rewriteProcs procInstrs
+
+      val _ = withOpenFile (name ^ ".s")
+                           (fn out =>
+                               (TextIO.output (out, "\t.data\n");
+                                (app (emitStr out) strs);
+                                TextIO.output (out, "\n\t.text\n");
+                                TextIO.output (out, "\t.globl main\n");
+                                (app (emitProc out) procInstrs)))
      in
-       if !ErrorMsg.anyErrors then
-         (app ErrorMsg.display (!ErrorMsg.errorLog);
-          raise Fail "Compilation failed")
-       else
-         let
-           val _ = withOpenFile (name ^ ".s")
-                                (fn out =>
-                                    (TextIO.output (out, "\t.data\n");
-                                     (app (emitProc out) strFrags);
-                                     TextIO.output (out, "\n\t.text\n");
-                                     TextIO.output (out, "\t.globl main\n");
-                                     (app (emitProc out) procFrags)))
-         in
-           result
-         end
-     end)
+      (procs, strs)
+     end
 
 
 fun compileFile filename = compile (filename, TextIO.openIn filename)

@@ -490,3 +490,33 @@ fun run () =
     end
 
 end
+
+fun newInst (dst, src) =
+    Assem.OPER {assem="", dst=dst, src=src, jump=NONE}
+
+val instrs = let
+  val L1 = Temp.newLabel ()
+  val a = Temp.newTemp ()
+  val b = Temp.newTemp ()
+  val c = Temp.newTemp ()
+in
+  [newInst ([a], []),
+   Assem.LABEL {assem="", lab=L1},
+   newInst ([b], [a]),
+   newInst ([c], [c, b]),
+   newInst ([a], [b]),
+   Assem.OPER {assem="", dst=[], src=[a], jump=SOME [L1]},
+   newInst ([], [c])]
+end
+
+(* Need to remove the signature of Liveness for this to work *)
+(*
+val (flowgraph, nodes) = MakeGraph.instrs2graph instrs
+val (lin, lout) = Liveness.livenessGraph flowgraph
+val _ = app (fn s =>
+                print (String.concatWith ", "
+                                         (map Int.toString
+                                              (Liveness.TempSet.listItems s)) ^ "\n"))
+            (map (fn n =>
+                     (valOf (Liveness.T.look (lout, n)))) nodes)
+*)
