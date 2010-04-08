@@ -1,4 +1,6 @@
-structure Graph :> GRAPH =
+(* TODO: opaque-ify *)
+(* TODO: succ, pred implemented using Sets *)
+structure Graph : GRAPH =
 struct
 type node' = int
 type temp = Temp.temp
@@ -12,6 +14,8 @@ val bogusNode = NODE{succ=[~1],pred=[]}
 fun isBogus(NODE{succ= ~1::_,...}) = true
   | isBogus _ = false
 
+(* A graph is an array where each element is a NODE,
+ * and a node contains the succ and pred lists. *)
 structure A = DynamicArrayFn(struct open Array
 			     type elem = noderep
 			     type vector = noderep vector
@@ -58,13 +62,19 @@ fun check(g,g') = (* if g=g' then () else raise GraphEdge *) ()
 fun delete(i,j::rest) = if i=j then rest else j::delete(i,rest)
   | delete(_,nil) = raise GraphEdge
 
-fun diddle_edge change {from=(g:graph, i),to=(g':graph, j)} =
-    let val _ = check(g,g')
-      val NODE{succ=si,pred=pi} = A.sub(g,i)
-      val _ = A.update(g,i,NODE{succ=change(j,si),pred=pi})
-      val NODE{succ=sj,pred=pj} = A.sub(g,j)
-      val _ = A.update(g,j,NODE{succ=sj,pred=change(i,pj)})
-    in ()
+fun diddle_edge change {from=(g:graph, i), to=(g':graph, j)} =
+    let
+      val _ = check(g, g')
+
+      val NODE {succ=si, pred=pi} = A.sub (g, i)
+      val _ = A.update (g, i, NODE{succ=change (j, si),
+                                   pred=pi})
+
+      val NODE{succ=sj, pred=pj} = A.sub (g, j)
+      val _ = A.update (g, j, NODE{succ=sj,
+                                   pred=change(i, pj)})
+    in
+      ()
     end
 
 val mk_edge = diddle_edge (op ::)
