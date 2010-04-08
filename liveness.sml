@@ -169,9 +169,12 @@ fun interferenceGraph (flowgraph as Flow.FGRAPH {control, def, use, ismove}) =
       fun addEdges node =
           if not (forceLookF (ismove, node, "ismove[n]")) then
             app (fn a =>
-                    let val a = tempToNodeFn a in
-                      app (fn b => Graph.mk_edge {from=a,
-                                                  to=tempToNodeFn b})
+                    let val aNode = tempToNodeFn a in
+                      app (fn b =>
+                              if a <> b then
+                                Graph.mk_edge {from=aNode,
+                                               to=tempToNodeFn b}
+                              else ())
                           (liveOutFn node)
                     end)
                 (forceLookF (def, node, "def[n]"))
@@ -194,7 +197,7 @@ fun show (out, (IGRAPH {graph, tnode, gtemp, moves})) =
                          ((nodeToStr node) ^ ": " ^
                           String.concatWith ", "
                                             (map nodeToStr
-                                                 (Graph.pred node))
+                                                 (Graph.adj node))
                           ^ "\n"))
     in
       app printNeighbors (Graph.nodes graph)

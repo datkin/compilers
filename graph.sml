@@ -1,18 +1,22 @@
-(* TODO: opaque-ify *)
-(* TODO: succ, pred implemented using Sets *)
-structure Graph : GRAPH =
+structure Graph :> GRAPH =
 struct
 type node' = int
 type temp = Temp.temp
 
-datatype noderep = NODE of {succ: node' list, pred: node' list}
+structure NodeSet = RedBlackSetFn (struct
+                                   type ord_key = node'
+                                   val compare = Int.compare
+                                   end)
 
-val emptyNode = NODE{succ=[],pred=[]}
+datatype noderep = NODE of {succ: NodeSet.set, pred: NodeSet.set}
 
-val bogusNode = NODE{succ=[~1],pred=[]}
+val emptyNode = NODE{succ=NodeSet.empty, pred=NodeSet.empty}
 
-fun isBogus(NODE{succ= ~1::_,...}) = true
-  | isBogus _ = false
+(* Placed at the end of the array to indicate the end? *)
+val bogusNode = NODE{succ=NodeSet.singleton ~1,
+                     pred=NodeSet.empty}
+
+fun isBogus(NODE{succ, pred}) = NodeSet.member (succ, ~1)
 
 (* A graph is an array where each element is a NODE,
  * and a node contains the succ and pred lists. *)
@@ -25,42 +29,58 @@ structure A = DynamicArrayFn(struct open Array
 type graph = A.array
 
 type node = graph * node'
-fun eq((_,a),(_,b)) = a=b
+fun eq ((_, a), (_, b)) = a=b
 
-fun augment (g: graph) (n: node') : node = (g,n)
+fun augment (g: graph) (n: node') : node = (g, n)
 
-fun newGraph() = A.array(0,bogusNode)
+fun newGraph () = A.array (0, bogusNode)
 
-fun nodes g = let val b = A.bound g
-                fun f i = if isBogus( A.sub(g,i)) then nil
-			  else (g,i)::f(i+1)
-	      in f 0
-              end
+fun nodes g =
+    let
+      (* Gives the index of the highest element that has been set in this array. *)
+      val b = A.bound g
+      fun f i = if isBogus (A.sub (g, i)) then
+                  nil
+		else
+                  (g, i) :: f (i+1)
+    in
+      f 0
+    end
 
-fun succ(g,i) = let val NODE{succ=s,...} = A.sub(g,i)
-		in map (augment g) s
-		end
-fun pred(g,i) = let val NODE{pred=p,...} = A.sub(g,i)
-                in map (augment g) p
-		end
-fun adj gi = pred gi @ succ gi
+fun succ (g, i) =
+    let val NODE {succ, ...} = A.sub (g, i) in
+      map (augment g) (NodeSet.listItems succ)
+    end
+fun pred (g, i) =
+    let val NODE {pred, ...} = A.sub (g, i) in
+      map (augment g) (NodeSet.listItems pred)
+    end
+fun adj (g, i) =
+    let val NODE {succ, pred} = A.sub (g, i) in
+      map (augment g) (NodeSet.listItems (NodeSet.union (succ, pred)))
+    end
 
 fun newNode g = (* binary search for unused node *)
-    let fun look(lo,hi) =
+    let fun look (lo, hi) =
             (* i < lo indicates i in use
              * i >= hi indicates i not in use *)
-            if lo=hi then (A.update(g,lo,emptyNode); (g,lo))
-            else let val m = (lo+hi) div 2
-                 in if isBogus(A.sub(g,m)) then look(lo,m) else look(m+1,hi)
+            if lo = hi then
+              (A.update (g, lo, emptyNode); (g, lo))
+            else let val m = (lo+hi) div 2 in
+                   if isBogus (A.sub (g, m)) then
+                     look (lo, m)
+                   else
+                     look (m+1, hi)
                  end
-    in look(0, 1 + A.bound g)
+    in
+      look (0, 1 + A.bound g)
     end
 
 exception GraphEdge
-fun check(g,g') = (* if g=g' then () else raise GraphEdge *) ()
+fun check (g, g') = (* if g=g' then () else raise GraphEdge *) ()
 
-fun delete(i,j::rest) = if i=j then rest else j::delete(i,rest)
-  | delete(_,nil) = raise GraphEdge
+val add = NodeSet.add'
+fun delete (node, nodes) = NodeSet.delete (nodes, node)
 
 fun diddle_edge change {from=(g:graph, i), to=(g':graph, j)} =
     let
@@ -77,14 +97,13 @@ fun diddle_edge change {from=(g:graph, i), to=(g':graph, j)} =
       ()
     end
 
-val mk_edge = diddle_edge (op ::)
+val mk_edge = diddle_edge add
 val rm_edge = diddle_edge delete
 
 structure Table = IntMapTable(type key = node
-fun getInt (g,n) = n
+fun getInt (g, n) = n
 fun getKey _ = raise Fail "getKey not supported")
 
-
-fun nodename(g,i:int) = "n" ^ Int.toString(i)
+fun nodename (g, i:int) = "n" ^ Int.toString(i)
 
 end
