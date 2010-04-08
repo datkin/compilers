@@ -136,7 +136,7 @@ struct
                   (* This indicates that these registers will be used as
                    * sources by instructions added in the final phase
                    * (procEntryExit3). *)
-                   src=[RA, SP, FP],
+                   src=[RA, SP, FP, ZERO],
                    jump=SOME []}]
 
   fun procEntryExit3 (frame, body) =
