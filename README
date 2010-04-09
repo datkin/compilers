@@ -2,6 +2,15 @@
   Atkin, Drew
   Mendelewski, John
 
+[Liveness Analysis Comments]
+
+[[Points of Interest]]
+- We've changed Appel's implementation of graph to use one of SML/NJ's
+built-in Set functors rather than lists to eliminate redundant edges.
+We've also augmented the table signature with a "get" method for
+returning an item (rather than an item *option*) when we expect one to
+be present.
+
 [Instruction Selection Comments]
 
 [[Points of Interest]]

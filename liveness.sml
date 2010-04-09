@@ -121,7 +121,7 @@ fun interferenceGraph (flowgraph as Flow.FGRAPH {control, def, use, ismove}) =
       fun nodeToTemp node = FT.get (nodeToTempMap, node, "node->temp")
       fun liveOut node = TempSet.listItems (FT.get (liveOutMap, node, "live-out[n]"))
 
-      (* WTF!!!! This should be so much more elegant just
+      (* This should be so much more elegant just
        * traversing the instr list for Assem.MOVE instructions *)
       fun getMoves (node, moves) =
           if FT.get (ismove, node, "ismove[n]") then
@@ -162,7 +162,7 @@ fun interferenceGraph (flowgraph as Flow.FGRAPH {control, def, use, ismove}) =
       (IGRAPH {graph=igraph,
                tnode=tempToNode,
                gtemp=nodeToTemp,
-               moves=[]},
+               moves=moves},
        liveOut)
     end
 

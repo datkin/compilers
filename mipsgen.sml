@@ -450,7 +450,7 @@ fun codegen frame stm =
           end
 
       and callInstr (T.NAME label, srcs) =
-          A.OPER {assem="jal `j0",
+          A.OPER {assem="jal " ^ Symbol.name label,
                   (* Registers that get written by the call
                    * (ie any register that is not preserved
                    *  across the call - if it's written and

@@ -509,6 +509,50 @@ in
    newInst ([], [c])]
 end
 
+val instrs' = let
+  val L1 = Temp.newLabel ()
+  val L2 = Temp.newLabel ()
+  val L3 = Temp.newLabel ()
+  val L4 = Temp.newLabel ()
+  val a = Temp.newTemp ()
+  val b = Temp.newTemp ()
+  val c = Temp.newTemp ()
+  val d = Temp.newTemp ()
+  val e = Temp.newTemp ()
+  val f = Temp.newTemp ()
+in
+  [newInst ([b], []),
+   newInst ([a], []),
+   newInst ([f], []),
+   Assem.LABEL {assem="", lab=L1},
+   Assem.OPER {assem="", dst=[], src=[a, b], jump=SOME [L2, L3]},
+
+   Assem.LABEL {assem="", lab=L2},
+   newInst ([c], [a, b]),
+   newInst ([d], [c]),
+   newInst ([f], [d]),
+   newInst ([e], [c]),
+   newInst ([f], [e]),
+   newInst ([b], [f]),
+   Assem.OPER {assem="", dst=[], src=[], jump=SOME [L4]},
+
+   Assem.LABEL {assem="", lab=L3},
+   newInst ([f], [f, a, b]),
+   Assem.OPER {assem="", dst=[], src=[], jump=SOME [L4]},
+
+   Assem.LABEL {assem="", lab=L4},
+   newInst ([a], [a]),
+   Assem.OPER {assem="", dst=[], src=[], jump=SOME [L1]}]
+end
+
+(* Actual interference graph:
+a: f, e, d, c, b
+b: f, a
+c: f, d, a
+d: c, a
+e: a
+f: c, b, a *)
+
 (* Need to remove the signature of Liveness for this to work *)
 (*
 val (flowgraph, nodes) = MakeGraph.instrs2graph instrs

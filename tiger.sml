@@ -36,12 +36,13 @@ fun genInstr {body, frame} =
       instrs'
     end
 
-fun rewriteProcs procs : (Frame.frame * Assem.instr list) list =
+fun rewriteProc (frame, instrs) : (Frame.frame * Assem.instr list) =
     let
-      val instrs = List.concat (map #2 procs)
       val (flowgraph, nodes) = MakeGraph.instrs2graph instrs
+      val (igraph, liveout) = Liveness.interferenceGraph flowgraph
+      (* TODO: Perform register allocation here *)
     in
-      procs
+      (frame, instrs)
     end
 
 (* TODO: we can remove labels that are never referenced from anywhere. *)
@@ -64,12 +65,6 @@ fun compile (name, source) =
                  raise Fail "Compilation failed with static errors")
               else ()
 
-         (*
-      fun isProc Frame.PROC _ = true
-        | isProc Frame.STRING _ = false
-      val (procFrags, strFrags) = List.partition isProc frags
-          *)
-
       fun partitionFrags (Frame.PROC proc, (procs, strs)) =
           (proc :: procs, strs)
         | partitionFrags (Frame.STRING str, (procs, strs)) =
@@ -81,7 +76,7 @@ fun compile (name, source) =
                            procs
 
       (* do register allocation and rewrite (spill) the instrs as necessary *)
-      val instrs' = rewriteProcs procInstrs
+      val procInstrs' = map rewriteProc procInstrs
 
       val _ = withOpenFile (name ^ ".s")
                            (fn out =>
