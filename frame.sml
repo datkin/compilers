@@ -26,6 +26,7 @@ sig
   val RV : Temp.temp
   val SP : Temp.temp
   val RA : Temp.temp
+  val ZERO : Temp.temp
 
   val specialregs : Temp.temp list
   val argregs : Temp.temp list

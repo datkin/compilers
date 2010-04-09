@@ -44,6 +44,8 @@ fun rewriteProcs procs : (Frame.frame * Assem.instr list) list =
       procs
     end
 
+(* TODO: we can remove labels that are never referenced from anywhere. *)
+(* We can also find jumps to jumps and rewrite them? *)
 fun compile (name, source) =
     let
       val _ = (ErrorMsg.reset name; Translate.reset ())

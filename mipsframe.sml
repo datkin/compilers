@@ -132,11 +132,16 @@ struct
   fun procEntryExit2 (frame, instrs) =
       instrs @
       [Assem.OPER {assem="",
+                   (* TODO: are these correct? *)
                    dst=[],
                   (* This indicates that these registers will be used as
-                   * sources by instructions added in the final phase
-                   * (procEntryExit3). *)
-                   src=[RA, SP, FP, ZERO],
+                   * sources by instructions added in the final phase,
+                   * procEntryExit3, see: Appel pp 209. *)
+                   src=[RA, RV, SP, ZERO],
+                   (* SOME [] here indicates that control does not
+                    * flow to the next instruction, but rather that
+                    * control will transfer to some unknown location
+                    * at this point. *)
                    jump=SOME []}]
 
   fun procEntryExit3 (frame, body) =
