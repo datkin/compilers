@@ -10,6 +10,7 @@ findescape.sml
 flowgraph.sml
 graph.sig
 graph.sml
+hashset.sml
 liveness.sml
 makegraph.sml
 parse.sml
