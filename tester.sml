@@ -525,24 +525,55 @@ val instrs'' = let
   val d = Temp.newTemp ()
   val e = Temp.newTemp ()
 in
-  [Assem.LABEL {assem="", lab=enter},
-   newMove (c, r3),
-   newMove (a, r1),
-   newMove (b, r2),
-   newInst ([d], []),
-   newMove (e, a),
+  [Assem.LABEL {assem="", lab=enter}, (* n0 *)
+   newMove (c, r3), (* n1 *)
+   newMove (a, r1), (* n2 *)
+   newMove (b, r2), (* n3 *)
+   newInst ([d], []), (* n4 *)
+   newMove (e, a), (* n5 *)
 
-   Assem.LABEL {assem="", lab=loop},
-   newInst ([d], [d, b]),
-   newInst ([e], [e]),
-   Assem.OPER {assem="", dst=[], src=[e], jump=SOME [loop, cont]},
-   Assem.LABEL {assem="", lab=cont},
-   newMove (r1, d),
-   newMove (r3, c),
-   newInst ([], [r1, r3]) (* r1, r3 live out *)]
+   Assem.LABEL {assem="", lab=loop}, (* n6 *)
+   newInst ([d], [d, b]), (* n7 *)
+   newInst ([e], [e]), (* n8 *)
+   Assem.OPER {assem="", dst=[], src=[e], jump=SOME [loop, cont]}, (* n9 *)
+   Assem.LABEL {assem="", lab=cont}, (* n10 *)
+   newMove (r1, d), (* n11 *)
+   newMove (r3, c), (* n13 *)
+   newInst ([], [r1, r3]) (* n14 *) (* r1, r3 live out *)]
 end;
 
-(* app (fn n => print ("- " ^ String.concatWith ", " (map Int.toString (liveout n)) ^ "\n")) nodes; *)
+(*
+
+ val (graph, nodes) = MakeGraph.instrs2graph instrs'';
+ val (igraph, liveout) = Liveness.interferenceGraph graph;
+
+ print "\nInterferences:\n";
+ Liveness.show (TextIO.stdOut, igraph);
+
+ print "\nLiveout:\n";
+ app (fn n => print ("- " ^ String.concatWith ", " (map Int.toString (liveout n)) ^ "\n")) nodes;
+ (* Print all def's *)
+ val Flow.FGRAPH {control, def, use, ismove} = graph;
+ app (fn n => print ("- " ^ String.concatWith ", "
+                                              (map Int.toString
+                                                   (Temp.Set.listItems (Flow.Graph.Table.get (def, n, "")))) ^ "\n"))
+     nodes;
+ *)
+
+(* Actual liveouts:
+- 155, 156, 157
+- 155, 156, 160
+- 156, 158, 160
+- 158, 159, 160
+- 158, 159, 160, 161
+- 159, 160, 161, 162
+- 159, 160, 161, 162
+- 159, 160, 161, 162
+- 159, 160, 161, 162
+- 159, 160, 161, 162
+- 160, 161
+- 155, 160
+- 155, 157 *)
 
 val instrs' = let
   val L1 = Temp.newLabel ()
