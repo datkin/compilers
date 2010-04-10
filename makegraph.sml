@@ -30,16 +30,16 @@ end = struct
           | linkEdges (_, node, NONE) = SOME node
         val _ = ListPair.foldr linkEdges NONE (instrs, nodes)
         fun buildTables (Assem.OPER {assem, dst, src, jump}, node, (defs, uses, moves)) =
-            (Graph.Table.enter (defs, node, dst),
-             Graph.Table.enter (uses, node, src),
+            (Graph.Table.enter (defs, node, Temp.Set.fromList dst),
+             Graph.Table.enter (uses, node, Temp.Set.fromList src),
              Graph.Table.enter (moves, node, false))
           | buildTables (Assem.MOVE {assem, dst, src}, node, (defs, uses, moves)) =
-            (Graph.Table.enter (defs, node, [dst]),
-             Graph.Table.enter (uses, node, [src]),
+            (Graph.Table.enter (defs, node, Temp.Set.singleton dst),
+             Graph.Table.enter (uses, node, Temp.Set.singleton src),
              Graph.Table.enter (moves, node, true))
           | buildTables (Assem.LABEL _, node, (defs, uses, moves)) =
-            (Graph.Table.enter (defs, node, []),
-             Graph.Table.enter (uses, node, []),
+            (Graph.Table.enter (defs, node, Temp.Set.empty),
+             Graph.Table.enter (uses, node, Temp.Set.empty),
              Graph.Table.enter (moves, node, false))
         val (defTable, useTable, moveTable) = ListPair.foldl
                                               buildTables

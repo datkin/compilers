@@ -2,8 +2,8 @@ structure Flow =
 struct
   structure Graph = Graph
   datatype flowgraph = FGRAPH of {control: Graph.graph,
-                                  def: Temp.temp list Graph.Table.table,
-                                  use: Temp.temp list Graph.Table.table,
+                                  def: Temp.Set.set Graph.Table.table,
+                                  use: Temp.Set.set Graph.Table.table,
                                   ismove: bool Graph.Table.table}
 
   (* Note:  any "use" within the block is assumed to be BEFORE a "def"

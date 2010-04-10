@@ -595,12 +595,24 @@ val (lin, lout) = Liveness.livenessGraph flowgraph
 val _ = app (fn s =>
                 print (String.concatWith ", "
                                          (map Int.toString
-                                              (Liveness.TempSet.listItems s)) ^ "\n"))
+                                              (Liveness.Temp.Set.listItems s)) ^ "\n"))
             (map (fn n =>
                      (valOf (Liveness.T.look (lout, n)))) nodes)
 *)
 
 (* Callee save register code alone doubles the queens compile time. *)
 (*
+
 let val timer = Timer.startCPUTimer (); val _ = Tiger.compileFile "testcases/merge.tig" in Timer.checkCPUTimer timer end
+
+val g = Graph.newGraph ();
+val nodes as [n0, n1, n2, n3] = List.tabulate (4, (fn _ => Graph.newNode g))
+val _ = (Graph.mk_edge {from=n0, to=n1};
+         Graph.mk_edge {from=n0, to=n2};
+         Graph.mk_edge {from=n1, to=n2};
+         Graph.mk_edge {from=n1, to=n3};
+         Graph.mk_edge {from=n3, to=n0} (* add cycle *)
+        )
+
+String.concatWith ", " (map Graph.nodename nodes)
 *)

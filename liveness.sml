@@ -1,8 +1,3 @@
-structure TempSet = BinarySetFn (struct
-                                 type ord_key = Temp.temp
-                                 val compare = Int.compare
-                                 end) (* HashSet *)
-
 structure Liveness :
 sig
   datatype igraph =
@@ -12,8 +7,8 @@ sig
                moves: (Graph.node * Graph.node) list}
 
   val livenessGraph :
-      Flow.flowgraph -> TempSet.set Flow.Graph.Table.table *
-                        TempSet.set Flow.Graph.Table.table
+      Flow.flowgraph -> Temp.Set.set Flow.Graph.Table.table *
+                        Temp.Set.set Flow.Graph.Table.table
 
   val interferenceGraph :
       Flow.flowgraph -> igraph * (Flow.Graph.node -> Temp.temp list)
@@ -59,10 +54,29 @@ fun topologicalSort nodes =
       #1 (DFS (List.last nodes, mark))
     end
 
-(* Creates a Depth-first tree and folds *down* the tree from the top *)
-(* leafFold will do the same folding from the leaves up (?)
-fun rootFold direction folder combiner base node =
-    *)
+(* Create a depth-first tree and fold *down* the tree from the top.
+ * It's tail recursive! kinda... *)
+type node = Graph.node
+fun foldroot (children: node -> node list)
+             (continue: node -> bool) (* determine if we should continue *)
+             (fold: node * 'a -> 'a)
+             (base: 'a)
+             (root: node) : 'a =
+    let
+      fun fold' (node, (acc, visited)) =
+          if not (continue node) orelse
+             isSome (FT.look (visited, node)) then
+            (acc, visited)
+          else
+            foldl fold'
+                  (fold (node, acc), FT.enter (visited, node, ()))
+                  (children node)
+      val (result, _) = fold' (root, (base, FT.empty))
+    in
+      result
+    end
+
+(* fun foldleaves children continue fold combine base root = ... *)
 
 fun livenessGraph (Flow.FGRAPH {control, def, use, ismove}) =
     let
@@ -73,20 +87,20 @@ fun livenessGraph (Flow.FGRAPH {control, def, use, ismove}) =
       val nodes = (* topologicalSort *) (Flow.Graph.nodes control)
 
       (* Initialize an empty live map as a base *)
-      val initLiveMap = foldr (fn (n, t) => FT.enter (t, n, TempSet.empty))
+      val initLiveMap = foldr (fn (n, t) => FT.enter (t, n, Temp.Set.empty))
                               FT.empty
                               nodes
 
       fun tablesEqual (t1, t2) =
           (* We assume that nodes[t1] = nodes[t2] *)
-          (* This really just pulls the TempSets for each node
+          (* This really just pulls the temp sets for each node
            * from each table and compares them to see if they've changed *)
           List.all (fn node =>
                        let
                          val set1 = FT.get (t1, node, "set1")
                          val set2 = FT.get (t2, node, "set2")
                        in
-                         TempSet.compare (set1, set2) = General.EQUAL
+                         Temp.Set.compare (set1, set2) = General.EQUAL
                        end)
                    nodes
 
@@ -98,15 +112,15 @@ fun livenessGraph (Flow.FGRAPH {control, def, use, ismove}) =
       fun build (node, (liveIn, liveOut)) =
           let
             val nodeOut = FT.get (liveOut, node, "out[n]")
-            val useSet = TempSet.fromList (FT.get (use, node, "use[n]"))
-            val defSet = TempSet.fromList (FT.get (def, node, "def[n]"))
-            val nodeIn' = TempSet.union (useSet,
-                                         TempSet.difference (nodeOut,
+            val useSet = FT.get (use, node, "use[n]")
+            val defSet = FT.get (def, node, "def[n]")
+            val nodeIn' = Temp.Set.union (useSet,
+                                         Temp.Set.difference (nodeOut,
                                                              defSet))
             val liveIn' = FT.enter (liveIn, node, nodeIn')
 
-            val nodeOut' = foldr TempSet.union
-                                 TempSet.empty
+            val nodeOut' = foldr Temp.Set.union
+                                 Temp.Set.empty
                                  (map (fn s => FT.get (liveIn, s, "in[s]"))
                                       (Flow.Graph.succ node))
             val liveOut' = FT.enter (liveOut, node, nodeOut')
@@ -139,15 +153,15 @@ fun interferenceGraph (flowgraph as Flow.FGRAPH {control, def, use, ismove}) =
       (* TODO: collect these from the liveoutmap? *)
       val allTemps = foldr (fn (node, temps) =>
                                let
-                                 val defs = TempSet.fromList (FT.get (def, node, "def[n]"))
-                                 val uses = TempSet.fromList (FT.get (use, node, "use[n]"))
+                                 val defs = FT.get (def, node, "def[n]")
+                                 val uses = FT.get (use, node, "use[n]")
                                in
-                                 TempSet.union (temps, TempSet.union (defs, uses))
+                                 Temp.Set.union (temps, Temp.Set.union (defs, uses))
                                end)
-                           TempSet.empty
+                           Temp.Set.empty
                            nodes
 
-      val allTemps = TempSet.listItems allTemps
+      val allTemps = Temp.Set.listItems allTemps
 
       val igraph = Graph.newGraph ();
 
@@ -163,15 +177,15 @@ fun interferenceGraph (flowgraph as Flow.FGRAPH {control, def, use, ismove}) =
       (* Turn table accesses into functions *)
       fun tempToNode temp = Temp.Table.get (tempToNodeMap, temp, "temp->node")
       fun nodeToTemp node = FT.get (nodeToTempMap, node, "node->temp")
-      fun liveOut node = TempSet.listItems (FT.get (liveOutMap, node, "live-out[n]"))
+      fun liveOut node = Temp.Set.listItems (FT.get (liveOutMap, node, "live-out[n]"))
 
       (* This should be so much more elegant just
        * traversing the instr list for Assem.MOVE instructions *)
       fun getMoves (node, moves) =
           if FT.get (ismove, node, "ismove[n]") then
             let
-              val [dst] = FT.get (def, node, "def[n]")
-              val [src] = FT.get (use, node, "use[n]")
+              val [dst] = Temp.Set.listItems (FT.get (def, node, "def[n]"))
+              val [src] = Temp.Set.listItems (FT.get (use, node, "use[n]"))
               val dstNode = tempToNode dst
               val srcNode = tempToNode src
             in
@@ -213,16 +227,16 @@ fun interferenceGraph (flowgraph as Flow.FGRAPH {control, def, use, ismove}) =
        * all be marked as interfering (ie, in procEntryExit2). *)
       fun addEdges node =
           if not (FT.get (ismove, node, "ismove[n]")) then
-            app (fn a =>
-                    let val aNode = tempToNode a in
-                      app (fn b =>
-                              if a <> b then
-                                Graph.mk_edge {from=aNode,
-                                               to=tempToNode b}
-                              else ())
-                          (liveOut node)
-                    end)
-                (FT.get (def, node, "def[n]"))
+            Temp.Set.app (fn a =>
+                             let val aNode = tempToNode a in
+                               app (fn b =>
+                                       if a <> b then
+                                         Graph.mk_edge {from=aNode,
+                                                        to=tempToNode b}
+                                       else ())
+                                   (liveOut node)
+                             end)
+                         (FT.get (def, node, "def[n]"))
           else ()
 
       val _ = app addEdges nodes

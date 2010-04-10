@@ -9,18 +9,20 @@ struct
                                   fun getInt n = n
                                   fun getKey n = n)
 
+    structure Set = BinarySetFn (struct
+                                 type ord_key = temp
+                                 val compare = Int.compare
+                                 end)
 
     fun toString t = "t" ^ Int.toString t
 
   type label = Symbol.symbol
 
-local structure F = Format
-      fun postinc x = let val i = !x in x := i+1; i end
-      val labs = ref 0
- in
+  local structure F = Format
+    fun postinc x = let val i = !x in x := i+1; i end
+    val labs = ref 0
+  in
     fun newLabel () = Symbol.symbol(F.format "L%d" [F.INT(postinc labs)])
     val namedLabel = Symbol.symbol
-end
-
-
+  end
 end
