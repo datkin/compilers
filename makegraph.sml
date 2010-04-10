@@ -16,8 +16,13 @@ end = struct
         fun linkEdges (Assem.OPER {assem, dst, src, jump=SOME jumps}, node, _) =
              (app (fn label =>
                       case findLabelNode label of
-                           SOME next => Graph.mk_edge {from=node, to=next}
-                         | NONE => (* External call. Ignore *) ())
+                           SOME jump => Graph.mk_edge {from=node, to=jump}
+                         (* External call or jump out of function. Ignore. *)
+                         | NONE => ())
+                      (* | NONE => (if isSome next then
+                                      Graph.mk_edge {from=node,
+                                                     to=valOf next}
+                                    else ()) *)
                   jumps;
               SOME node)
           | linkEdges (_, node, SOME next) =

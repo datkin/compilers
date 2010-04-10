@@ -3,10 +3,10 @@ struct
 type node' = int
 type temp = Temp.temp
 
-structure NodeSet = RedBlackSetFn (struct
-                                   type ord_key = node'
-                                   val compare = Int.compare
-                                   end)
+structure NodeSet = BinarySetFn (struct
+                                 type ord_key = node'
+                                 val compare = Int.compare
+                                 end)
 
 datatype noderep = NODE of {succ: NodeSet.set, pred: NodeSet.set}
 

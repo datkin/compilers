@@ -1,7 +1,7 @@
-structure TempSet = RedBlackSetFn (struct
-                                   type ord_key = Temp.temp
-                                   val compare = Int.compare
-                                   end)
+structure TempSet = BinarySetFn (struct
+                                 type ord_key = Temp.temp
+                                 val compare = Int.compare
+                                 end) (* HashSet *)
 
 structure Liveness :
 sig
@@ -29,11 +29,49 @@ datatype igraph = IGRAPH of {graph: Graph.graph,
                              gtemp: Graph.node -> Temp.temp,
                              moves: (Graph.node * Graph.node) list}
 
-fun listToSet list = TempSet.addList (TempSet.empty, list)
+(* Can this be cleaned up to look nicer/more concise?
+ * Also, would it be possible to turn this into a fold
+ * type function so that we can, e.g. do live-out creation
+ * while doing the traversal, rather than doing the
+ * traversal *and* then folding up over the returned list?
+ * This sounds similar to the deforestation optimizations
+ * that Wadler writes about. *)
+fun topologicalSort nodes =
+    let
+      val mark = foldr (fn (n, t) => FT.enter (t, n, false))
+                       FT.empty
+                       nodes
+      fun DFS (node, mark) =
+          if not (FT.get (mark, node, "mark[i]")) then
+            let
+              val (nodes', mark') =
+                  foldr (fn (n, (l, m)) =>
+                            let val (l', m') = DFS (n, m) in
+                              (l' @ l, m')
+                            end)
+                        ([], FT.enter (mark, node, true))
+                        (Graph.pred node)
+            in
+              (node :: nodes', mark')
+            end
+          else ([], mark)
+    in
+      #1 (DFS (List.last nodes, mark))
+    end
+
+(* Creates a Depth-first tree and folds *down* the tree from the top *)
+(* leafFold will do the same folding from the leaves up (?)
+fun rootFold direction folder combiner base node =
+    *)
 
 fun livenessGraph (Flow.FGRAPH {control, def, use, ismove}) =
     let
-      val nodes = Flow.Graph.nodes control
+      (* We can topologically sort the nodes, but it turns out that
+       * just traversing the nodes in reverse order (w/ foldr)
+       * is actually slightly faster than sorting them first.
+       * Topologically sorting only seems to save ~1 iteration. *)
+      val nodes = (* topologicalSort *) (Flow.Graph.nodes control)
+
       (* Initialize an empty live map as a base *)
       val initLiveMap = foldr (fn (n, t) => FT.enter (t, n, TempSet.empty))
                               FT.empty
@@ -52,16 +90,16 @@ fun livenessGraph (Flow.FGRAPH {control, def, use, ismove}) =
                        end)
                    nodes
 
-      fun fix eq f x =
+      fun fix eq f x n =
           let val x' = f x in
-            if eq (x, x') then x' else fix eq f x'
+            if eq (x, x') then (x', n) else fix eq f x' (n+1)
           end
 
       fun build (node, (liveIn, liveOut)) =
           let
             val nodeOut = FT.get (liveOut, node, "out[n]")
-            val useSet = listToSet (FT.get (use, node, "use[n]"))
-            val defSet = listToSet (FT.get (def, node, "def[n]"))
+            val useSet = TempSet.fromList (FT.get (use, node, "use[n]"))
+            val defSet = TempSet.fromList (FT.get (def, node, "def[n]"))
             val nodeIn' = TempSet.union (useSet,
                                          TempSet.difference (nodeOut,
                                                              defSet))
@@ -76,7 +114,7 @@ fun livenessGraph (Flow.FGRAPH {control, def, use, ismove}) =
             (liveIn', liveOut')
           end
 
-      val (liveIn, liveOut) = fix (fn ((li, lo), (li', lo')) =>
+      val ((liveIn, liveOut), n) = fix (fn ((li, lo), (li', lo')) =>
                                       tablesEqual (li, li') andalso
                                       tablesEqual (lo, lo'))
                                   (fn (liveIn, liveOut) =>
@@ -84,6 +122,11 @@ fun livenessGraph (Flow.FGRAPH {control, def, use, ismove}) =
                                             (liveIn, liveOut)
                                             nodes)
                                   (initLiveMap, initLiveMap)
+                                  0
+(*
+      val _ = print ("length: " ^ (Int.toString (length nodes)) ^ "\n")
+      val _ = print ("its: " ^ (Int.toString n) ^ "\n")
+ *)
     in
       (liveIn, liveOut)
     end
@@ -93,10 +136,11 @@ fun interferenceGraph (flowgraph as Flow.FGRAPH {control, def, use, ismove}) =
       val nodes = Flow.Graph.nodes control
       val (_, liveOutMap) = livenessGraph flowgraph
 
+      (* TODO: collect these from the liveoutmap? *)
       val allTemps = foldr (fn (node, temps) =>
                                let
-                                 val defs = listToSet (FT.get (def, node, "def[n]"))
-                                 val uses = listToSet (FT.get (use, node, "use[n]"))
+                                 val defs = TempSet.fromList (FT.get (def, node, "def[n]"))
+                                 val uses = TempSet.fromList (FT.get (use, node, "use[n]"))
                                in
                                  TempSet.union (temps, TempSet.union (defs, uses))
                                end)
@@ -131,7 +175,7 @@ fun interferenceGraph (flowgraph as Flow.FGRAPH {control, def, use, ismove}) =
               val dstNode = tempToNode dst
               val srcNode = tempToNode src
             in
-              app (fn b => if src <> b then
+              app (fn b => if not (src = b orelse dst = b) then
                              Graph.mk_edge {from=dstNode,
                                             to=tempToNode b}
                            else ())
@@ -143,6 +187,30 @@ fun interferenceGraph (flowgraph as Flow.FGRAPH {control, def, use, ismove}) =
 
       val moves = foldr getMoves [] nodes
 
+      (* This only adds edges between dsts and live-outs (see: Appel 222)
+       * however, there are some cases where this might not add nodes for
+       * interfering nodes. For non move nodes, there should be edges
+       * between all (live out temps unioned with all dst temps).
+       * However, consider this case:
+       *
+       *     instr      liveout
+       * L1:            a0, a1, a2
+       *     c <- a0    a1, a2
+       *     ...        ...
+       *
+       * Only c -> a1 and c -> a2 edges will be added. The fact that
+       * a0, a1, and a2 interfere with each other at the label is not
+       * recorded by this addEdges implementation. No interference edges
+       * will be added to a0. Unioning the dsts
+       * with the live-outs and adding edges between each of them at
+       * every node would solve this problem, but I believe that we can
+       * simply ignore the problem b/c it will be dealt with in the
+       * register allocator by the precolored registers. Ie, in this
+       * example, a0, a1 and a2 are precolored and will interfere
+       * implicitly.
+       * Another solution is to prefix each function with a "sink"
+       * instruction that lists fp, a0-a3, etc as dst registers so they'll
+       * all be marked as interfering (ie, in procEntryExit2). *)
       fun addEdges node =
           if not (FT.get (ismove, node, "ismove[n]")) then
             app (fn a =>
