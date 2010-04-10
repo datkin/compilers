@@ -494,6 +494,9 @@ end
 fun newInst (dst, src) =
     Assem.OPER {assem="", dst=dst, src=src, jump=NONE}
 
+fun newMove (dst, src) =
+    Assem.MOVE {assem="", dst=dst, src=src}
+
 val instrs = let
   val L1 = Temp.newLabel ()
   val a = Temp.newTemp ()
@@ -508,6 +511,38 @@ in
    Assem.OPER {assem="", dst=[], src=[a], jump=SOME [L1]},
    newInst ([], [c])]
 end
+
+val instrs'' = let
+  val enter = Temp.newLabel ()
+  val loop = Temp.newLabel ()
+  val cont = Temp.newLabel ()
+  val r1 = Temp.newTemp ()
+  val r2 = Temp.newTemp ()
+  val r3 = Temp.newTemp ()
+  val a = Temp.newTemp ()
+  val b = Temp.newTemp ()
+  val c = Temp.newTemp ()
+  val d = Temp.newTemp ()
+  val e = Temp.newTemp ()
+in
+  [Assem.LABEL {assem="", lab=enter},
+   newMove (c, r3),
+   newMove (a, r1),
+   newMove (b, r2),
+   newInst ([d], []),
+   newMove (e, a),
+
+   Assem.LABEL {assem="", lab=loop},
+   newInst ([d], [d, b]),
+   newInst ([e], [e]),
+   Assem.OPER {assem="", dst=[], src=[e], jump=SOME [loop, cont]},
+   Assem.LABEL {assem="", lab=cont},
+   newMove (r1, d),
+   newMove (r3, c),
+   newInst ([], [r1, r3]) (* r1, r3 live out *)]
+end;
+
+(* app (fn n => print ("- " ^ String.concatWith ", " (map Int.toString (liveout n)) ^ "\n")) nodes; *)
 
 val instrs' = let
   val L1 = Temp.newLabel ()
@@ -543,7 +578,7 @@ in
    Assem.LABEL {assem="", lab=L4},
    newInst ([a], [a]),
    Assem.OPER {assem="", dst=[], src=[], jump=SOME [L1]}]
-end
+end;
 
 (* Actual interference graph:
 a: f, e, d, c, b
@@ -563,4 +598,9 @@ val _ = app (fn s =>
                                               (Liveness.TempSet.listItems s)) ^ "\n"))
             (map (fn n =>
                      (valOf (Liveness.T.look (lout, n)))) nodes)
+*)
+
+(* Callee save register code alone doubles the queens compile time. *)
+(*
+let val timer = Timer.startCPUTimer (); val _ = Tiger.compileFile "testcases/merge.tig" in Timer.checkCPUTimer timer end
 *)
