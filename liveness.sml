@@ -20,51 +20,36 @@ datatype igraph = IGRAPH of {graph: Graph.graph,
                              gtemp: Graph.node -> Temp.temp,
                              moves: (Graph.node * Graph.node) list}
 
-type node = Graph.node
-
-(* fold' creates a depth-first tree and fold *down* the tree from the root.
+(* Create a depth-first tree and fold *down* the tree from the root.
+ * The stop function is used to determine if folding over the
+ * current branch of the tree should terminate "early" on the given
+ * node. Note that the node will still be "folded over". The
+ * children function generates a list of nodes to visit next. The
+ * signature is tailored for use in other folds (see below).
  * It's tail recursive! kinda... *)
-fun folder (stop, children, fold) =
+(* (node -> bool) ->
+ * (node -> node list) ->
+ * (node * 'a -> 'a) ->
+ * (node * 'a) -> 'a *)
+fun foldroot stop children fold (root, base) =
     let
       fun fold' (node, (acc, visited)) =
           if isSome (FT.look (visited, node)) then
             (acc, visited)
           else if stop node then
-            (* Does this make sense? *)
             (fold (node, acc), visited)
           else
             foldl fold'
                   (fold (node, acc), FT.enter (visited, node, ()))
                   (children node)
-    in
-      fold'
-    end
 
-(* Applies the fold starting at the root node. *)
-(* (stop: node -> bool,
-    children: node -> node list,
-    fold: node * 'a -> 'a,
-    base: 'a, root: node) -> 'a *)
-fun foldroot stop children fold base root =
-    let
-      val fold' = folder (stop, children, fold)
-      val (result, _) = fold' (root, (base, FT.empty)) in
-      result
-    end
-
-(* Applies the fold starting at the children of the root. *)
-fun foldchildren stop children fold base root =
-    let
-      val fold' = folder (stop, children, fold)
-      val (result, _) = foldl fold'
-                              (base, FT.empty)
-                              (children root)
+      val (result, _) = fold' (root, (base, FT.empty))
     in
       result
     end
 
 fun topologicalSort root =
-    foldroot (fn _ => false) Graph.succ op:: [] root
+    foldroot (fn _ => false) Graph.succ op:: (root, [])
 
 fun liveout (Flow.FGRAPH {control, def, use, ismove}) =
     let
@@ -80,34 +65,49 @@ fun liveout (Flow.FGRAPH {control, def, use, ismove}) =
                               FT.empty
                               nodes
 
-      fun buildLiveout (root, liveout) =
+      fun build (root, liveout) =
           let
-            (* Continue if the temp isn't already defined or part of
-             * the liveout set for this node. *)
-            fun toDefs temp node' =
-                (Temp.Set.member (FT.get (def, node', "def[n]"),
-                                  temp)
-                 orelse
-                 (Temp.Set.member (FT.get (liveout, node', "out[n]"),
-                                   temp)))
+            (*   Given a temp used at the root node, find all the nodes from
+             * which control flows into the root node. Traverse the flow-
+             * graph in reverse, starting at these nodes, marking the temp
+             * as live-out at each node, until a def of the given temp is
+             * encountered.
+             *   The def node will be the *last* node at which the temp is
+             * marked live-out.
+             *   It is important that we start this traversal at the nodes
+             * which flow into the root, and not at the root itself, b/c
+             * our stop heuristic would cause marking to terminate
+             * immediately if the temp has already been marked live-out
+             * at the root (e.g., if the temp is in the node's use *and*
+             * def sets). *)
+            fun markNodes (temp, liveout) =
+                let
+                  (* Keep traversing nodes unless:
+                   * - the temp is defined at this node
+                   * or
+                   * - the temp is already marked live-out at this node. *)
+                  fun toDefs node =
+                      (Temp.Set.member (FT.get (def, node, "def[n]"),
+                                        temp)
+                       orelse
+                       (Temp.Set.member (FT.get (liveout, node, "out[n]"),
+                                         temp)))
 
-            (* Add the temp to the liveout of this node. *)
-            fun add temp (node', liveout') =
-                let val nodeout = FT.get (liveout', node', "out'[n]") in
-                  FT.enter (liveout', node', Temp.Set.add (nodeout, temp))
+                  (* Add the temp to this node's live-out set. *)
+                  fun add (node, liveout') =
+                      let val nodeout = FT.get (liveout', node, "out'[n]") in
+                        FT.enter (liveout', node, Temp.Set.add (nodeout, temp))
+                      end
+
+                  val marker = foldroot toDefs Graph.pred add
+                in
+                  foldl marker liveout (Graph.pred root)
                 end
-
           in
-            (* For each temp defined at this node, walk backwards in
-             * the control flow graph, marking the temp as live out,
-             * until we arrive at *another* definition of the temp.
-             * That node will be the *last* node of which it is live out. *)
-            Temp.Set.foldl (fn (temp, liveout') =>
-                               foldchildren (toDefs temp)
-                                            Graph.pred
-                                            (add temp)
-                                            liveout'
-                                            root)
+            (* For each temp used by this node, mark the temp as live-out
+             * in all the nodes upstream of this one in the control-flow
+             * graph. *)
+            Temp.Set.foldl markNodes
                            liveout
                            (FT.get (use, root, "use[n]"))
           end
@@ -116,9 +116,10 @@ fun liveout (Flow.FGRAPH {control, def, use, ismove}) =
        * By starting at (one of) the "deepest" nodes, we should minimize
        * the runtime. Once a temp has been marked live out on a node, we
        * don't need to visit that node again. This should result in each
-       * node being visit once or never per temp.
+       * node being visit once or never per temp. O(N * T), where N is the
+       * number of nodes and T is the number of temps.
        * See: Appel pp 216 ("One variable at a time") *)
-      foldroot (fn _ => false) Graph.pred buildLiveout base last
+      foldroot (fn _ => false) Graph.pred build (last, base)
     end
 
 fun interferenceGraph (flowgraph as Flow.FGRAPH {control, def, use, ismove}) =
