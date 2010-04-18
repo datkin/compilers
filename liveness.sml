@@ -83,7 +83,7 @@ fun liveout (Flow.FGRAPH {control, def, use, ismove}) =
             fun markNodes (temp, liveout) =
                 let
                   (* Keep traversing nodes unless:
-                   * - the temp is defined at this node
+                   * - the temp gets (re)defined at this node
                    * or
                    * - the temp is already marked live-out at this node. *)
                   fun toDefs node =
@@ -99,8 +99,10 @@ fun liveout (Flow.FGRAPH {control, def, use, ismove}) =
                         FT.enter (liveout', node, Temp.Set.add (nodeout, temp))
                       end
 
+                  (* Create a function to do the marking... *)
                   val marker = foldroot toDefs Graph.pred add
                 in
+                  (* ...and apply it to all the root's predecessors. *)
                   foldl marker liveout (Graph.pred root)
                 end
           in

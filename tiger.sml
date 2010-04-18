@@ -1,6 +1,9 @@
 structure Tiger =
 struct
 
+structure CodeGen = MipsGen
+structure Frame = MipsFrame
+
 fun withOpenFile name f =
     let
       val out = TextIO.openOut name
@@ -8,8 +11,6 @@ fun withOpenFile name f =
       (f out before TextIO.closeOut out)
       handle e => (TextIO.closeOut out; raise e)
     end
-
-structure Frame = Frame
 
 fun emitProc out (frame, instr) =
     let
@@ -30,7 +31,7 @@ fun genInstr {body, frame} =
     let
       val stms = Canon.linearize body
       val stms' = Canon.traceSchedule (Canon.basicBlocks stms)
-      val instrs = List.concat (map (MipsGen.codegen frame) stms')
+      val instrs = List.concat (map (CodeGen.codegen frame) stms')
       val instrs' = Frame.procEntryExit2 (frame, instrs)
     in
       instrs'
@@ -40,7 +41,8 @@ fun rewriteProc (frame, instrs) : (Frame.frame * Assem.instr list) =
     let
       val (flowgraph, nodes) = MakeGraph.instrs2graph instrs
       val (igraph, liveout) = Liveness.interferenceGraph flowgraph
-      (* TODO: Perform register allocation here *)
+      (* val _ = Liveness.show (TextIO.stdOut, igraph) *)
+      (* TODO: Perform register allocation and spilling here. *)
     in
       (frame, instrs)
     end
@@ -51,13 +53,14 @@ fun compile (name, source) =
     let
       val _ = (ErrorMsg.reset name; Translate.reset ())
 
-      val ast = Parse.parse (name, source)
       (* Short circuit compilation on parse errors. *)
+      val ast = Parse.parse (name, source)
       val _ = if !ErrorMsg.anyErrors then
                 (app ErrorMsg.display (!ErrorMsg.errorLog);
                  raise Fail "Compilation failed with parsing errors")
               else ()
 
+      (* Short circuit compilation on semantic errors. *)
       val _ = FindEscape.findEscape ast
       val {frags, ty} = Semant.transProg ast
       val _ = if !ErrorMsg.anyErrors then
@@ -75,7 +78,6 @@ fun compile (name, source) =
                                (frame, genInstr proc))
                            procs
 
-      (* do register allocation and rewrite (spill) the instrs as necessary *)
       val procInstrs' = map rewriteProc procInstrs
 
       val _ = withOpenFile (name ^ ".s")
@@ -86,7 +88,7 @@ fun compile (name, source) =
                                 TextIO.output (out, "\t.globl main\n");
                                 (app (emitProc out) procInstrs)))
      in
-      (procs, strs)
+      (frags, ty, procs, strs)
      end
 
 

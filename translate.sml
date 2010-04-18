@@ -1,13 +1,14 @@
 signature TRANSLATE =
 sig
-  (* structure Frame : FRAME *)
-  (* structure TargetInt : INTEGER *)
-
   type exp
   type level
   type access
   type breakpoint
-
+(*
+  structure Frame : FRAME
+  structure CodeGen : CODEGEN sharing type CodeGen.frame = Frame.frame
+  (* structure TargetInt : INTEGER *)
+*)
   val BOGUS : exp
   val UNIT : exp
   val NIL : exp
@@ -48,7 +49,10 @@ end
                    structure TargetInt : INTEGER) :> TRANSLATE =*)
 structure Translate :> TRANSLATE =
 struct
-(* structure Frame = Frame *)
+(*
+  structure Frame = MipsFrame
+  structure CodeGen = MipsGen
+ *)
   structure TargetInt = Int32
   structure T = Tree and A = Absyn
 

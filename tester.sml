@@ -552,6 +552,7 @@ end;
 
  print "\nLiveout:\n";
  app (fn n => print ("- " ^ String.concatWith ", " (map Int.toString (liveout n)) ^ "\n")) nodes;
+
  (* Print all def's *)
  val Flow.FGRAPH {control, def, use, ismove} = graph;
  app (fn n => print ("- " ^ String.concatWith ", "
