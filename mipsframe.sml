@@ -41,6 +41,8 @@ struct
                SOME register => register
              | NONE => Temp.toString temp)
 
+  val registers = map tempToRegister (argregs @ calleesaves @ callersaves)
+
   val wordSize = 4
 
   datatype access = InFrame of int | InReg of Temp.temp

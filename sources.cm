@@ -4,6 +4,8 @@ absyn.sml
 assem.sml
 canon.sml
 codegen.sig
+color.sig
+color.sml
 env.sml
 errormsg.sml
 findescape.sml
@@ -16,6 +18,8 @@ makegraph.sml
 parse.sml
 prabsyn.sml
 printtree.sml
+regalloc.sig
+regalloc.sml
 semant.sml
 symbol.sml
 table.sig

@@ -19,6 +19,7 @@ sig
 
   val tempMap : register Temp.Table.table
   val tempToRegister : Temp.temp -> register
+  val registers : register list
 
   val wordSize : int
 
