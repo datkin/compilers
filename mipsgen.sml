@@ -331,7 +331,25 @@ fun codegen frame stm =
                                    jump=NONE}))
 
         (* Memory access *)
-        | munchExp (T.MEM e) =
+        | munchExp (T.MEM (T.BINOP (T.PLUS, e, T.CONST n))) =
+          result (fn r =>
+                     emit (A.OPER {assem="lw `d0, " ^ const n ^ "(`s0)",
+                                   dst=[r],
+                                   src=[munchExp e],
+                                   jump=NONE}))
+        | munchExp (T.MEM (T.BINOP (T.PLUS, T.CONST n, e))) =
+          result (fn r =>
+                     emit (A.OPER {assem="lw `d0, " ^ const n ^ "(`s0)",
+                                   dst=[r],
+                                   src=[munchExp e],
+                                   jump=NONE}))
+        | munchExp (T.MEM (T.BINOP (T.MINUS, e, T.CONST n))) =
+          result (fn r =>
+                     emit (A.OPER {assem="lw `d0, " ^ const (~n) ^ "(`s0)",
+                                   dst=[r],
+                                   src=[munchExp e],
+                                   jump=NONE}))
+       | munchExp (T.MEM e) =
           result (fn r =>
                      emit (A.OPER {assem="lw `d0, (`s0)",
                                    dst=[r],
@@ -428,22 +446,22 @@ fun codegen frame stm =
                              munchStm (T.MOVE (T.TEMP argReg,
                                                T.TEMP argTmp)))
                          (Frame.argregs, registerArgTemps);
-
+(* TODO: how does this affect register allocation?
             (* Copy the caller-save registers. *)
             ListPair.map (fn (temp, callerSave) =>
                              munchStm (T.MOVE (T.TEMP temp,
                                                T.TEMP callerSave)))
                          (saves, Frame.callersaves);
-
+*)
             (* Emit the actual call instruction. *)
             emit (callInstr (exp, srcs));
-
+(*
             (* Restore caller-save registers. *)
             ListPair.map (fn (callerSave, temp) =>
                              munchStm (T.MOVE (T.TEMP callerSave,
                                                T.TEMP temp)))
                          (Frame.callersaves, saves);
-
+*)
             updateSp (~numStackArgs);
 
             Frame.RV
