@@ -16,16 +16,16 @@ fun alloc (instrs, frame) =
     let
       val (flowgraph, nodes) = MakeGraph.instrs2graph instrs
       val (igraph, liveout) = Liveness.interferenceGraph flowgraph
-
+      (* val _ = Liveness.show (TextIO.stdOut, igraph) *)
       (* TODO: define a better spill heuristic. *)
 
       val (allocation, spills) = Color.color {interference = igraph,
-                                                 initial = Frame.tempMap,
-                                                 spillCost = fn _ => 1,
-                                                 registers = Frame.registers}
+                                              initial = Frame.tempMap,
+                                              spillCost = fn _ => 1,
+                                              registers = Frame.registers}
     in
       if List.null spills then
-        (instrs, allocation)
+        (instrs, frame, allocation)
       else
         alloc (rewrite (instrs, spills), frame)
     end

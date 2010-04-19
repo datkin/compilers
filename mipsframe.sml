@@ -37,7 +37,7 @@ struct
                        labelRegisters "t" callersaves)
 
   fun tempToRegister temp =
-      "$" ^ (case Temp.Table.look (tempMap, temp) of
+      (* "$" ^ *)(case Temp.Table.look (tempMap, temp) of
                SOME register => register
              | NONE => Temp.toString temp)
 

@@ -12,10 +12,10 @@ fun withOpenFile name f =
       handle e => (TextIO.closeOut out; raise e)
     end
 
-fun emitProc out (frame, instr) =
+fun emitProc out (instr, frame, allocs) =
     let
       val {prolog, body=instr, epilog} = Frame.procEntryExit3 (frame, instr)
-      val format0 = Assem.format Frame.tempToRegister
+      val format0 = Assem.format allocs
     in
       TextIO.output (out, prolog);
       (* should be .text for mips, with .globl main *)
@@ -35,16 +35,6 @@ fun genInstr {body, frame} =
       val instrs' = Frame.procEntryExit2 (frame, instrs)
     in
       instrs'
-    end
-
-fun rewriteProc (frame, instrs) : (Frame.frame * Assem.instr list) =
-    let
-      val (flowgraph, nodes) = MakeGraph.instrs2graph instrs
-      val (igraph, liveout) = Liveness.interferenceGraph flowgraph
-      (* val _ = Liveness.show (TextIO.stdOut, igraph) *)
-      (* TODO: Perform register allocation and spilling here. *)
-    in
-      (frame, instrs)
     end
 
 (* TODO: we can remove labels that are never referenced from anywhere. *)
@@ -75,10 +65,12 @@ fun compile (name, source) =
       val (procs, strs) = foldr partitionFrags ([], []) frags
 
       val procInstrs = map (fn (proc as {body, frame}) =>
-                               (frame, genInstr proc))
+                               (genInstr proc, frame))
                            procs
-
-      val procInstrs' = map rewriteProc procInstrs
+(*
+      val debugProcs = map (fn (instrs, frame) =>
+                               (instrs, frame, Frame.tempToRegister))
+                           procInstrs
 
       val _ = withOpenFile (name ^ ".s")
                            (fn out =>
@@ -86,7 +78,22 @@ fun compile (name, source) =
                                 (app (emitStr out) strs);
                                 TextIO.output (out, "\n\t.text\n");
                                 TextIO.output (out, "\t.globl main\n");
-                                (app (emitProc out) procInstrs)))
+                                (app (emitProc out) debugProcs)))
+*)
+      val allocedProcs = map RegAlloc.alloc procInstrs
+
+      val allocedProcs = map (fn (a, b, allocs) =>
+                                 (a, b, (fn t =>
+                                            Temp.Table.get (allocs, t, "reg[t]"))))
+                             allocedProcs
+
+      val _ = withOpenFile (name ^ ".s")
+                           (fn out =>
+                               (TextIO.output (out, "\t.data\n");
+                                (app (emitStr out) strs);
+                                TextIO.output (out, "\n\t.text\n");
+                                TextIO.output (out, "\t.globl main\n");
+                                (app (emitProc out) allocedProcs)))
      in
       (frags, ty, procs, strs)
      end
