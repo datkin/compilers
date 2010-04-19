@@ -31,6 +31,13 @@ type graph = A.array
 type node = graph * node'
 fun eq ((_, a), (_, b)) = a=b
 
+structure Set = BinarySetFn (struct
+                             type ord_key = node
+                             fun compare ((_, n1), (_, n2)) =
+                                 Int.compare (n1, n2)
+                             end)
+
+
 fun augment (g: graph) (n: node') : node = (g, n)
 
 fun newGraph () = A.array (0, bogusNode)

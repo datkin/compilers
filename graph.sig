@@ -18,6 +18,9 @@ sig
   structure Table : TABLE
   sharing type Table.key = node
 
+  structure Set : ORD_SET
+  sharing type Set.Key.ord_key = node
+
   val nodename: node->string  (* for debugging only *)
 
 end
