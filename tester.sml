@@ -648,3 +648,33 @@ val _ = (Graph.mk_edge {from=n0, to=n1};
 
 String.concatWith ", " (map Graph.nodename nodes)
 *)
+
+(* See Appel pp 230. *)
+val instrs' = let
+  val b = Temp.newTemp ()
+  val c = Temp.newTemp ()
+  val d = Temp.newTemp ()
+  val e = Temp.newTemp ()
+  val f = Temp.newTemp ()
+  val g = Temp.newTemp ()
+  val h = Temp.newTemp ()
+  val j = Temp.newTemp ()
+  val k = Temp.newTemp ()
+  val m = Temp.newTemp ()
+in
+  [newInst ([k, j], []),
+   newInst ([g], [j]),
+   newInst ([h], [k]),
+   newInst ([f], [g, h]),
+   newInst ([e], [j]),
+   newInst ([m], [j]),
+   newInst ([b], [f]),
+   newInst ([c], [e]),
+   newInst ([d], [c]),
+   newInst ([k], [m]),
+   newInst ([j], [b]),
+   newInst ([], [d, k, j])]
+end;
+
+     (* RegAlloc.alloc (instrs', Frame.newFrame {formals=[], name=Temp.newLabel ()})
+      *)

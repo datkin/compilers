@@ -229,7 +229,7 @@ fun interferenceGraph (flowgraph as Flow.FGRAPH {control, def, use, ismove}) =
 
 fun show (out, (IGRAPH {graph, tnode, gtemp, moves})) =
     let
-      fun nodeToStr node = Int.toString (gtemp node)
+      val nodeToStr = Frame.tempToRegister o gtemp
       fun printNeighbors node =
           TextIO.output (out,
                          ((nodeToStr node) ^ ": " ^
