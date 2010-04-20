@@ -478,7 +478,7 @@ fun codegen frame stm =
                    * - technically we could add the arg registers,
                    *   but they're dead after the call anyway.
                    * - *)
-                  dst=[Frame.RV] @ Frame.callersaves,
+                  dst=[Frame.RV] @ Frame.callersaves @ Frame.argregs,
                   (* Registers that must be live at the call
                    * (ie that are read by the call):
                    * - a0 ... aN for arguments
@@ -493,7 +493,9 @@ fun codegen frame stm =
                   jump=NONE}
         | callInstr (exp, srcs) =
           A.OPER {assem="jalr `s0",
-                  dst=[Frame.RV] @ Frame.callersaves,
+                  (* The callee may manipulate the arg registers and
+                   * not restore them, so they need to interfere. *)
+                  dst=[Frame.RV] @ Frame.callersaves @ Frame.argregs,
                   src=[munchExp exp, Frame.SP] @ srcs,
                   jump=NONE}
     in

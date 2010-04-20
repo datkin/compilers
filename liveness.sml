@@ -48,15 +48,14 @@ fun foldroot stop children fold (root, base) =
       result
     end
 
+(* TODO: this is wrong b/c the items need to be added
+ * *after* the children have been folded over. *)
 fun topologicalSort root =
     foldroot (fn _ => false) Graph.succ op:: (root, [])
 
 fun liveout (Flow.FGRAPH {control, def, use, ismove}) =
     let
-      val nodes as first :: _ = Flow.Graph.nodes control
-      (* The topological sort returns one of the "deepest" nodes first,
-       * we'll use that node as the starting point for liveness analysis. *)
-      val sorted as last :: _ = topologicalSort first
+      val nodes = Flow.Graph.nodes control
 
       (* Initialize a map where every node's liveout set is empty. *)
       (* TODO: We should only have to init the nodes in sorted. Why
@@ -121,7 +120,8 @@ fun liveout (Flow.FGRAPH {control, def, use, ismove}) =
        * node being visit once or never per temp. O(N * T), where N is the
        * number of nodes and T is the number of temps.
        * See: Appel pp 216 ("One variable at a time") *)
-      foldroot (fn _ => false) Graph.pred build (last, base)
+      (* foldroot (fn _ => false) Graph.pred build (last, base) *)
+      foldr build base nodes
     end
 
 fun interferenceGraph (flowgraph as Flow.FGRAPH {control, def, use, ismove}) =

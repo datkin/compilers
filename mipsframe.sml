@@ -28,7 +28,7 @@ struct
 
   val tempMap = foldr Temp.Table.enter' Temp.Table.empty
                       ([(FP, "fp"),
-                        (RV, "rv"),
+                        (RV, "v0"),
                         (SP, "sp"),
                         (RA, "ra"),
                         (ZERO, "zero")] @
@@ -58,7 +58,9 @@ struct
        * Those that escape are copied into locals *below* the frame pointer.
        * Those that don't escape are copied into registers. *)
       (if escapes then
-         (InFrame frameOffset :: accesses, i+1, frameOffset - wordSize)
+         let val frameOffset' = frameOffset - wordSize in
+           (InFrame frameOffset' :: accesses, i+1, frameOffset')
+         end
        else
          (InReg (Temp.newTemp ()) :: accesses, i+1, frameOffset))
     else
@@ -69,7 +71,9 @@ struct
 
   fun newFrame {name, formals} =
     let
-      val (formals, _, frameOffset) = (foldl allocFormal ([], 0, 0) formals)
+      val (formals, _, frameOffset) = (foldl allocFormal
+                                             ([], 0, 0)
+                                             formals)
     in
       {name = name, formals = (rev formals),
        localCount = ref 0, frameOffset = ref frameOffset}
@@ -147,11 +151,20 @@ struct
                    jump=SOME []}]
 
   fun procEntryExit3 (frame, body) =
-      (* TODO: add sp allocation, fp adjustment *)
-      {prolog= "\n" ^ Symbol.name (name frame) ^ ":\t# Procedure\n",
-       body=body,
-       (* TODO: restore sp, fp *)
-       epilog="\tjr $ra # End\n"}
+      let
+        val spOffset = (! (#frameOffset frame)) - wordSize
+      in
+        (* TODO: add sp allocation, fp adjustment *)
+        {prolog= "\n" ^ Symbol.name (name frame) ^ ":\t# Procedure\n" ^
+                 "\tsw $fp, 0($sp)\n" ^
+                 "\tmove $fp, $sp\n" ^
+                 "\taddi $sp, $fp, -" ^ (Int.toString (~spOffset)) ^ "\n",
+         body=body,
+         (* TODO: restore sp, fp *)
+         epilog="\tmove $sp, $fp\n" ^
+                "\tlw $fp, 0($sp)\n" ^
+                "\tjr $ra # End\n"}
+      end
 
   fun string (label, str) =
        (* Ensure each word starts aligned on a word boundary.

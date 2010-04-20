@@ -5,38 +5,44 @@ type temp = Temp.temp
 type label = Temp.label
 
 datatype instr = OPER of {assem: string,
-              dst: temp list,
-              src: temp list,
-              jump: label list option}
+                          dst: temp list,
+                          src: temp list,
+                          jump: label list option}
                | LABEL of {assem: string, lab: Temp.label}
                | MOVE of {assem: string,
-              dst: temp,
-              src: temp}
+                          dst: temp,
+                          src: temp}
 
 fun format saytemp =
     let
+      fun saytemp' x = "$" ^ saytemp x
+      val saytemp = saytemp'
       fun speak(assem,dst,src,jump) =
-      let val saylab = Symbol.name
-        fun f(#"`":: #"s":: i::rest) =
-        (explode(saytemp(List.nth(src,ord i - ord #"0"))) @ f rest)
-          | f( #"`":: #"d":: i:: rest) =
-        (explode(saytemp(List.nth(dst,ord i - ord #"0"))) @ f rest)
-          | f( #"`":: #"j":: i:: rest) =
-        (explode(saylab(List.nth(jump,ord i - ord #"0"))) @ f rest)
-          | f( #"`":: #"`":: rest) = #"`" :: f rest
-          | f( #"`":: _ :: rest) = ErrorMsg.impossible "bad Assem format"
-          | f(c :: rest) = (c :: f rest)
-          | f nil = nil
-      in
+          let
+            val saylab = Symbol.name
+
+            fun f(#"`":: #"s":: i::rest) =
+                (explode(saytemp(List.nth(src,ord i - ord #"0"))) @ f rest)
+              | f( #"`":: #"d":: i:: rest) =
+                (explode(saytemp(List.nth(dst,ord i - ord #"0"))) @ f rest)
+              | f( #"`":: #"j":: i:: rest) =
+                (explode(saylab(List.nth(jump,ord i - ord #"0"))) @ f rest)
+              | f( #"`":: #"`":: rest) = #"`" :: f rest
+              | f( #"`":: _ :: rest) = ErrorMsg.impossible "bad Assem format"
+              | f(c :: rest) = (c :: f rest)
+              | f nil = nil
+          in
             if assem <> "" then
-              "\t" ^ (implode(f(explode assem))) ^
+              "\t" ^ (implode(f(explode assem))) ^ (*
               " (dst: [" ^ (String.concatWith ", " (map saytemp dst)) ^
               "], src: [" ^ (String.concatWith ", " (map saytemp src)) ^
               "])" ^
+              (if not (List.null jump) then
+                 " jump: [" ^ (String.concatWith ", " (map saylab jump)) ^ "]"
+               else "") ^ *)
               "\n"
-            else
-              ""
-      end
+            else ""
+          end
     in fn OPER{assem,dst,src,jump=NONE} => speak(assem,dst,src,nil)
         | OPER{assem,dst,src,jump=SOME j} => speak(assem,dst,src,j)
         | LABEL{assem,...} => assem

@@ -16,11 +16,16 @@ fun emitProc out (instr, frame, allocs) =
     let
       val {prolog, body=instr, epilog} = Frame.procEntryExit3 (frame, instr)
       val format0 = Assem.format allocs
+      val instr' = List.filter (fn Assem.MOVE {assem, dst, src} =>
+                                    allocs dst <> allocs src
+                                 | _ => true)
+                               instr
+
     in
       TextIO.output (out, prolog);
       (* should be .text for mips, with .globl main *)
       app (fn i => TextIO.output (out, (format0 i)))
-          instr;
+          instr';
       TextIO.output (out, epilog)
     end
 
@@ -94,6 +99,7 @@ fun compile (name, source) =
                                 TextIO.output (out, "\n\t.text\n");
                                 TextIO.output (out, "\t.globl main\n");
                                 (app (emitProc out) allocedProcs)))
+
      in
       (frags, ty, procs, strs)
      end

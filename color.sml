@@ -171,7 +171,7 @@ fun toNodeSet list = GS.addList (GS.empty, list)
 (* TODO: we'd save a lot of set -> list conversions if we
  * make this work natively on sets. *)
 fun min ([], _) = raise Fail "cannot take min of empty list!"
-  | min (first :: rest, f) =
+  | min (first :: rest, f : Graph.node -> real) =
     let
       val (item, _) =
           foldl (fn (item, (minItem, minVal)) =>
@@ -304,11 +304,11 @@ fun color {interference = Liveness.IGRAPH {graph, tnode, gtemp, moves},
               (wls, degrees) (* done *)
           end
 
-      val _ = NodeWL.debug (Frame.tempToRegister o gtemp, wls)
+      (* val _ = NodeWL.debug (Frame.tempToRegister o gtemp, wls) *)
 
       val (wls, degrees) = loop (wls, degrees)
 
-      val _ = print ("Colors: " ^ (String.concatWith ", " registers))
+      (* val _ = print ("Colors: " ^ (String.concatWith ", " registers)) *)
 
       val colors = RS.addList (RS.empty, registers)
 
@@ -351,21 +351,22 @@ fun color {interference = Liveness.IGRAPH {graph, tnode, gtemp, moves},
                   | color :: _ => (NodeWL.move wls Id.select Id.colored node,
                                    setColor (node, color, allocs))
 
-              val _ = print "\n"
-              val _ = NodeWL.debug (Frame.tempToRegister o gtemp, wls')
-              val _ = print ("Allocations: " ^
-                             String.concatWith ", "
-                             (map (fn key =>
-                                      Temp.toString key ^ ": " ^
-                                      Temp.Table.get (allocs', key, "!!!"))
-                                  (map #1 (Temp.Table.entries allocs'))) ^
-                            "\n")
-
             in
               assignColors (wls', allocs')
             end
 
       val (wls, allocs) = assignColors (wls, initial)
+(*
+      val _ = print "\n"
+      val _ = NodeWL.debug (Frame.tempToRegister o gtemp, wls)
+      val _ = print ("Allocations: " ^
+                     String.concatWith ", "
+                                       (map (fn key =>
+                                                Temp.toString key ^ ": " ^
+                                                Temp.Table.get (allocs, key, "!!!"))
+                                            (map #1 (Temp.Table.entries allocs))) ^
+                     "\n\n\n")
+*)
 
       val spills = map gtemp (NodeWL.asList wls Id.spilled)
     in
