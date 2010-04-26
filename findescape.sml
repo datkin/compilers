@@ -14,7 +14,9 @@ struct
      | A.FieldVar (var, _, _) => traverseVar (env, d, var)
      | A.SimpleVar (sym, _) =>
        case Symbol.look (env, sym) of
-         SOME (depth', escape) => if depth' < d then escape := true else ()
+         SOME (depth', escape) => if depth' < d then
+                                    escape := true
+                                  else ()
        | NONE => ()
 
   and traverseExp (env: escEnv, d: depth, s: A.exp) =
@@ -39,7 +41,8 @@ struct
         (traverse lo; traverse hi;
           traverseExp (Symbol.enter (env, var, (d, escape)), d, body))
       | A.LetExp {decs, body, pos} => traverseExp (traverseDecs (env, d, decs),
-                                                d, body)
+                                                   d,
+                                                   body)
       | A.ArrayExp {typ, dims, init, pos} => (map traverse dims; traverse init)
       | _ => ()
     end
@@ -56,7 +59,7 @@ struct
           A.FunctionDec fundecs => (app traverseFundec fundecs; env)
         | A.VarDec {name, escape, typ, init, pos} =>
             traverseDecs (Symbol.enter (env, name, (depth, escape)), depth, decs)
-        | A.TypeDec _ => env
+        | A.TypeDec _ => traverseDecs (env, depth, decs)
       end
 
 
