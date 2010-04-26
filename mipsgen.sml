@@ -132,21 +132,21 @@ fun codegen frame stm =
         (* Special case to-memory moves *)
         | munchStm (T.MOVE (T.MEM (T.BINOP (T.PLUS, T.CONST n, d)),
                             e)) =
-          emit (A.OPER {assem="sw `s0, " ^ const n ^ "(`d0)",
-                        dst=[munchExp d],
-                        src=[munchExp e],
+          emit (A.OPER {assem="sw `s0, " ^ const n ^ "(`s1)",
+                        dst=[],
+                        src=[munchExp e, munchExp d],
                         jump=NONE})
         | munchStm (T.MOVE (T.MEM (T.BINOP (T.PLUS, d, T.CONST n)),
                               e)) =
-          emit (A.OPER {assem="sw `s0, " ^ const n ^ "(`d0)",
-                        dst=[munchExp d],
-                        src=[munchExp e],
+          emit (A.OPER {assem="sw `s0, " ^ const n ^ "(`s1)",
+                        dst=[],
+                        src=[munchExp e, munchExp d],
                         jump=NONE})
         | munchStm (T.MOVE (T.MEM (T.BINOP (T.MINUS, d, T.CONST n)),
                               e)) =
-          emit (A.OPER {assem="sw `s0, " ^ (const (~n)) ^ "(`d0)",
-                        dst=[munchExp d],
-                        src=[munchExp e],
+          emit (A.OPER {assem="sw `s0, " ^ (const (~n)) ^ "(`s1)",
+                        dst=[],
+                        src=[munchExp e, munchExp d],
                         jump=NONE})
 
         (* Special case to-register moves *)
@@ -244,9 +244,9 @@ fun codegen frame stm =
         (* Generic to-memory move *)
         | munchStm (T.MOVE (T.MEM dExp, sExp)) =
           (* Any semantics about which should eval first? *)
-          emit (A.OPER {assem="sw `s0, (`d0)",
-                        dst=[munchExp dExp],
-                        src=[munchExp sExp],
+          emit (A.OPER {assem="sw `s0, (`s1)",
+                        dst=[],
+                        src=[munchExp sExp, munchExp dExp],
                         jump=NONE})
 
         | munchStm (T.MOVE _) = ErrorMsg.impossible "Moving to non temp/mem"
