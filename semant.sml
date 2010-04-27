@@ -477,7 +477,7 @@ and transExp (venv, tenv, level, bp, exp) =
 
 fun transProg exp =
   let
-    val mainLevel = Translate.newLevel {name=Temp.namedLabel "main", parent=Translate.outermost, formals=[]}
+    val mainLevel = Translate.newLevel {name=Temp.namedLabel "t_main", parent=Translate.outermost, formals=[]}
     val {exp, ty} = transExp (Env.base_venv,
                               Env.base_tenv,
                               mainLevel,
