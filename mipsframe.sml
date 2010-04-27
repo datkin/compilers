@@ -99,8 +99,9 @@ struct
            InReg (Temp.newTemp ()))
         end
 
-  fun externalCall (name, args) =
-    T.CALL (T.NAME (Temp.namedLabel name), args)
+  (* 'not' has to be translated in SPIM, see bullet 4: http://www.cs.princeton.edu/~appel/modern/spim/ *)
+  fun externalCall ("not", args) = externalCall ("_not", args)
+    | externalCall (name, args) = T.CALL (T.NAME (Temp.namedLabel name), args)
 
   fun exp (InFrame offset) fpExp = T.MEM (T.BINOP (T.PLUS, T.CONST offset, fpExp))
     | exp (InReg temp) _         = T.TEMP temp
