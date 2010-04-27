@@ -200,7 +200,12 @@ j $ra
 
 .data
 Lrunt40:  .asciiz "substring out of bounds\n"
+.align 2
+Lruntempty:
+.word 0
+.ascii ""
 
+.text
 substring:
 lw $t1,($a0)
 bltz $a1,Lrunt41
