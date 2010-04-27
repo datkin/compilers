@@ -377,7 +377,7 @@ struct
       let
         val numFields = length exps
         val r = T.TEMP (Temp.newTemp ())
-        val alloc = T.MOVE (r, Frame.externalCall ("malloc", [T.CONST (Frame.wordSize * numFields)]))
+        val alloc = T.MOVE (r, Frame.externalCall ("allocRecord", [T.CONST (Frame.wordSize * numFields)]))
         val (fieldInits, _) = foldl (fn (exp, (inits, i)) =>
                                  (T.SEQ (inits,
                                          T.MOVE (unEx (fieldVar (Ex r, i, true)), unEx exp)),
@@ -409,7 +409,7 @@ struct
         Ex (T.ESEQ (seq [productRegistersStm,
                          T.MOVE (resultTemp,
                                  Frame.externalCall ("initArray",
-                                                     [unEx initExp, sizeExp, T.CONST (length dims)])),
+                                                     [sizeExp, unEx initExp, T.CONST (length dims)])),
                          loadSizesStm],
                     resultTemp))
       end
@@ -441,9 +441,10 @@ struct
         Ex (T.ESEQ (seq [T.MOVE (T.TEMP resultTmp, unEx bodyExp),
                          T.JUMP (T.NAME doneLabel, [doneLabel]),
                          T.LABEL ERROR,
+                         T.EXP (Frame.externalCall ("print", [unEx (stringLit "Illegal access")])),
                          T.EXP (Frame.externalCall ("exit", [T.CONST 1])),
                          T.LABEL doneLabel],
-                T.TEMP resultTmp))
+                    T.TEMP resultTmp))
       end
 
   fun result () = !frags
