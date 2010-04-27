@@ -213,6 +213,7 @@ add $t2,$a1,$a2
 sgt $t3,$t2,$t1
 bnez $t3,Lrunt41
 add $t1,$a0,$a1
+addi $t1, 4
 bne $a2,1,Lrunt42
 lbu $a0,($t1)
 b chr
@@ -221,10 +222,12 @@ bnez $a2,Lrunt43
 la  $v0,Lruntempty
 j $ra
 Lrunt43:
-addi $a0,$a2,4
+addi $a0,$a2,4 # add space for the length field
 li   $v0,9
 syscall
 move $t2,$v0
+sw $a2,($t2) # store the length in the length field
+addiu $t2,4
 Lrunt44:
 lbu  $t3,($t1)
 sb   $t3,($t2)
@@ -256,18 +259,18 @@ syscall
 # }
 
 concat:
-lw $t0,($a0)
-lw $t1,($a1)
+lw $t0,($a0) # length str1
+lw $t1,($a1) # length str2
 beqz $t0,Lrunt50
 beqz $t1,Lrunt51
-addiu  $t2,$a0,4
-addiu  $t3,$a1,4
-add  $t4,$t0,$t1
-addiu $a0,$t4,4
+addiu  $t2,$a0,4 # point to str1
+addiu  $t3,$a1,4 # point to str2
+add  $t4,$t0,$t1 # store the new length
+addiu $a0,$t4,4 # new length + 4 = size to allocate
 li $v0,9
 syscall
-addiu $t5,$v0,4
-sw $t4,($v0)
+addiu $t5,$v0,4 # point to the first char in newStr
+sw $t4,($v0) # store the size
 Lrunt52:
 lbu $a0,($t2)
 sb  $a0,($t5)
@@ -276,12 +279,12 @@ addiu $t5,1
 addiu $t0,-1
 bgtz $t0,Lrunt52
 Lrunt53:
-lbu $a0,($t4)
+lbu $a0,($t3)
 sb  $a0,($t5)
-addiu $t4,1
+addiu $t3,1
 addiu $t5,1
-addiu $t2,-1
-bgtz $t2,Lrunt52
+addiu $t1,-1
+bgtz $t1,Lrunt53
 j $ra
 Lrunt50:
 move $v0,$a1

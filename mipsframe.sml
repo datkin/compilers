@@ -172,7 +172,7 @@ struct
         * (see: Hennessy & Patterson A-47) *)
       "\t.align 2\n" ^
       (Symbol.name label) ^ ":\t.word " ^ (Int.toString (String.size str)) ^ "\n" ^
-      "\t.ascii \"" ^ str ^ "\"\n"
+      "\t.ascii \"" ^ (String.toCString str) ^ "\"\n"
 
   fun rewriteCall (exp, args) =
       let
