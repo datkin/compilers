@@ -1,0 +1,42 @@
+let
+  type any = {any : int}
+  var x := print ("Enter a number: ")
+  var buffer := getchar()
+  var n := 0
+
+  function readint() : int =
+   let var any := any {any=0}
+       var i := 0
+       function isdigit(s : string) : int = 
+            ord(buffer)>=ord("0") & ord(buffer)<=ord("9")
+       function skipto() =
+         while buffer=" " | buffer="\n"
+           do buffer := getchar()
+    in skipto();
+       any.any := isdigit(buffer);
+       while isdigit(buffer)
+         do (i := i*10+ord(buffer)-ord("0"); buffer := getchar());
+       i
+   end
+
+  function printint(i: int) =
+   let function f(i:int) = if i>0 
+          then (f(i/10); print(chr(i-i/10*10+ord("0"))))
+    in if i<0 then (print("-"); f(-i))
+       else if i>0 then f(i)
+       else print("0")
+   end
+
+  function fact(n:int): int =
+    if n <= 1 then
+      1
+    else
+      n * fact(n-1)
+
+in
+  n := readint();
+  printint(n);
+  print("! = ");
+  printint(fact(n));
+  print("\n")
+end
