@@ -433,7 +433,7 @@ fun codegen frame stm =
 
             (* Bump the stack pointer. We do this first b/c if evaling
              * the stack arguments involves pushing more intermediates
-             * to the stack, it wont fuck with the existing items on the
+             * to the stack, it wont mess with the existing items on the
              * stack. Basically, reserve the stack space *before* using it. *)
             updateSp numStackArgs;
 

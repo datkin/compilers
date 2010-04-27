@@ -125,7 +125,7 @@ Lrunt20:
 sw $a2,($a1)
 sb $a0,4($a1)
 addiu $a1,$a1,8
-addiu $a0,$a0,1
+addiu $a0,$a0,1 # Don't forget to bump the loop variable... *sigh*
 slt $a3,$a0,256
 bnez $a3,Lrunt20
 li $a0,0
@@ -160,12 +160,12 @@ j $ra
 Lrunt30: .asciiz "character out of range\n"
 .text
 
-# 4294967551
-# What idiot wrote this code?
-# They want to do ((2**32) - 1) ^ 255 giving 4294967040, not 255! Wtf!
 chr:
+# Original validation logic was wrong, we want to do this:
 #andi $a1,$a0,4294967040
 #bnez $a1,Lrunt31
+# of course that's not a legal immediate value in MIPS, so we'll just bypass
+# validation. The customer is always right!
 sll  $a0,$a0,3
 la   $v0,Runtconsts($a0)
 j $ra
