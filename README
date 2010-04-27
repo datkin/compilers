@@ -2,6 +2,51 @@
   Atkin, Drew
   Mendelewski, John
 
+[Integration]
+
+[[Points of Interest]]
+
+- To run a Tiger program...
+  1. Compile the program with:
+
+     - Tiger.compileFile "testcases/merge.tig";
+
+  2. Concatentate the assmebled output with the runtime:
+
+     $ cat testcases/merge.tig.s runtime.s > prog.s
+
+  3. Execute it with spim!
+
+     $ spim -file "prog.s"
+
+- We hacked up the MIPS runtime available on Appel's site to work with our
+runtime. Any other (non-broken) runtime ought to be compatible with our
+compiler with the exception that initArray must handle a third argument
+specificying the dimensionality of the array being initialized.
+
+- Everything *seems* to work, but bug reports are welcome ;)
+  * Static links
+  * I/O
+  * Functions with > 4 arguments (> 3 declared arguments)
+  * Multidimensional arrays
+  * Null dereference and array bounds checks
+
+[Register Allocator]
+
+[[Points of Interest]]
+- We've implemented Appel's graph coloring register allocator with
+spilling. Register and stack coalescing are not (yet) supported.
+
+- procEntryExit{1,2,3} are complete, so aside from linking with the
+runtime, the compiler is essentially done.
+
+Compile a file with:
+
+  Tiger.compileFile "testcases/fact.tig";
+
+This will produce "testcases/fact.tig.s" which may be executed in
+SPIM.
+
 [Liveness Analysis Comments]
 
 [[Points of Interest]]
